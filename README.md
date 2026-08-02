@@ -36,6 +36,10 @@ npm install
 | `AWS_CA_BUNDLE` | SSLインスペクション用のルート証明書 (PEM) |
 | `PORT` | 既定 3210 |
 
+## 画面イメージ
+
+![Bedrock Chat 画面イメージ](docs/mockup.svg)
+
 ## 機能
 
 - ストリーミング表示、生成の途中停止
