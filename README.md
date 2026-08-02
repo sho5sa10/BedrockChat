@@ -3,6 +3,10 @@
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)
 ![Amazon Bedrock](https://img.shields.io/badge/Amazon%20Bedrock-Claude-orange.svg)
+[![Latest Release](https://img.shields.io/github/v/release/sho5sa10/BedrockChat)](https://github.com/sho5sa10/BedrockChat/releases/latest)
+
+> No Docker. No CDK. No CloudFormation. Just run and chat with Amazon Bedrock.
+> Docker も CDK も CloudFormation も不要。実行するだけで Amazon Bedrock とチャットできます。
 
 Amazon Bedrock 用のローカルチャットアプリです。企業のセキュリティポリシーを考慮し、通信先は Bedrock のみ、会話履歴や添付ファイルはローカルで管理します。Claude Code と同じ AWS 認証情報も利用できます。
 
@@ -60,9 +64,12 @@ MIT License（`LICENSE` を参照）。社内利用・改変・再配布は自�
 
 ## セットアップ
 
+### 方法A: GitHub Releases から（npm install 不要）
+
+[Releases](https://github.com/sho5sa10/BedrockChat/releases) から最新の `bedrock-chat-vX.X.X.zip` をダウンロードして展開するだけです。依存パッケージ (`node_modules`) を同梱しているため、Node.js さえ入っていれば `npm install` は不要です。社内配布はこの方法を推奨します。
+
 ```powershell
-cd bedrock-chat
-npm install
+cd 展開したフォルダ
 ```
 
 `start.ps1` の先頭を自分の環境に合わせて書き換えて実行します。
@@ -70,6 +77,22 @@ npm install
 ```powershell
 .\start.ps1
 ```
+
+### 方法B: ソースから（git clone）
+
+```powershell
+git clone https://github.com/sho5sa10/BedrockChat.git
+cd BedrockChat
+npm install
+```
+
+以降は方法Aと同じく `start.ps1` を編集して実行します。
+
+```powershell
+.\start.ps1
+```
+
+---
 
 ブラウザで <http://localhost:3210> が開きます。
 
