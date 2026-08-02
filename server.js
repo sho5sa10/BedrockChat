@@ -1,0 +1,305 @@
+import fs from "node:fs";
+import path from "node:path";
+import https from "node:https";
+import { fileURLToPath } from "node:url";
+import express from "express";
+import { HttpsProxyAgent } from "https-proxy-agent";
+import { NodeHttpHandler } from "@smithy/node-http-handler";
+import {
+  BedrockRuntimeClient,
+  ConverseStreamCommand,
+} from "@aws-sdk/client-bedrock-runtime";
+import {
+  BedrockClient,
+  ListInferenceProfilesCommand,
+  ListFoundationModelsCommand,
+} from "@aws-sdk/client-bedrock";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+const PORT = Number(process.env.PORT || 3210);
+const REGION =
+  process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1";
+
+// ---------------------------------------------------------------------------
+// Corporate proxy / SSL inspection
+//   HTTPS_PROXY   : http://proxy.example.co.jp:8080
+//   AWS_CA_BUNDLE : C:\certs\zscaler-root.pem  (also honours NODE_EXTRA_CA_CERTS)
+// ---------------------------------------------------------------------------
+const proxyUrl =
+  process.env.HTTPS_PROXY ||
+  process.env.https_proxy ||
+  process.env.HTTP_PROXY ||
+  process.env.http_proxy ||
+  null;
+
+const caPath = process.env.AWS_CA_BUNDLE || process.env.NODE_EXTRA_CA_CERTS || null;
+let ca;
+if (caPath) {
+  try {
+    ca = fs.readFileSync(caPath);
+  } catch (err) {
+    console.warn(`[warn] CA bundle not readable: ${caPath} (${err.message})`);
+  }
+}
+
+function buildAgent() {
+  if (proxyUrl) return new HttpsProxyAgent(proxyUrl, { ca, keepAlive: true });
+  return new https.Agent({ ca, keepAlive: true });
+}
+
+const requestHandler = new NodeHttpHandler({
+  httpsAgent: buildAgent(),
+  requestTimeout: 0, // streaming responses stay open
+  connectionTimeout: 15_000,
+});
+
+const clientConfig = { region: REGION, requestHandler };
+const runtime = new BedrockRuntimeClient(clientConfig);
+const control = new BedrockClient(clientConfig);
+
+// ---------------------------------------------------------------------------
+const app = express();
+app.use(express.json({ limit: "32mb" }));
+app.use(express.static(path.join(__dirname, "public")));
+
+/** ------------------------------------------------------------------
+ *  Local folder access
+ *  Roots are registered from the settings panel at runtime and kept in
+ *  memory only. Nothing outside a registered root can ever be read.
+ *  ----------------------------------------------------------------- */
+const IMAGE_FORMATS = { ".png":"png", ".jpg":"jpeg", ".jpeg":"jpeg", ".gif":"gif", ".webp":"webp" };
+const DOC_FORMATS = { ".pdf":"pdf", ".doc":"doc", ".docx":"docx", ".xls":"xls", ".xlsx":"xlsx",
+                      ".csv":"csv", ".txt":"txt", ".md":"md", ".html":"html", ".htm":"html" };
+const MAX_FILE_BYTES = 4.5 * 1024 * 1024;
+const MAX_LISTED = 2000;
+const MAX_DEPTH = 5;
+
+let allowedRoots = [];
+
+function insideRoots(target) {
+  const abs = path.resolve(target);
+  return allowedRoots.some(
+    (root) => abs === root || abs.startsWith(root + path.sep)
+  );
+}
+
+app.post("/api/roots", (req, res) => {
+  const wanted = Array.isArray(req.body?.roots) ? req.body.roots : [];
+  const ok = [], bad = [];
+  for (const raw of wanted) {
+    const p = String(raw).trim().replace(/^["']|["']$/g, "");
+    if (!p) continue;
+    try {
+      const abs = path.resolve(p);
+      if (fs.statSync(abs).isDirectory()) ok.push(abs);
+      else bad.push({ path: p, reason: "フォルダではありません" });
+    } catch {
+      bad.push({ path: p, reason: "見つかりません" });
+    }
+  }
+  allowedRoots = ok;
+  res.json({ roots: ok, rejected: bad });
+});
+
+app.get("/api/files", (_req, res) => {
+  const files = [];
+  let truncated = false;
+  const walk = (dir, root, depth) => {
+    if (files.length >= MAX_LISTED || depth > MAX_DEPTH) { truncated = true; return; }
+    let entries = [];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (files.length >= MAX_LISTED) { truncated = true; return; }
+      if (e.name.startsWith(".") || e.name === "node_modules" || e.name.startsWith("~$")) continue;
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) { walk(full, root, depth + 1); continue; }
+      const ext = path.extname(e.name).toLowerCase();
+      const kind = IMAGE_FORMATS[ext] ? "image" : DOC_FORMATS[ext] ? "document" : null;
+      if (!kind) continue;
+      let size = 0, mtime = 0;
+      try { const st = fs.statSync(full); size = st.size; mtime = st.mtimeMs; } catch { continue; }
+      files.push({ path: full, name: e.name, rel: path.relative(root, full), root, size, mtime, kind });
+    }
+  };
+  for (const root of allowedRoots) walk(root, root, 0);
+  files.sort((a, b) => b.mtime - a.mtime);
+  res.json({ roots: allowedRoots, files, truncated });
+});
+
+app.get("/api/config", (_req, res) => {
+  res.json({
+    region: REGION,
+    proxy: proxyUrl ? proxyUrl.replace(/\/\/.*@/, "//***@") : null,
+    caBundle: caPath || null,
+  });
+});
+
+/** Model list, read live from the account so IDs never go stale. */
+app.get("/api/models", async (_req, res) => {
+  const models = new Map();
+  try {
+    const profiles = await control.send(new ListInferenceProfilesCommand({ maxResults: 100 }));
+    for (const p of profiles.inferenceProfileSummaries ?? []) {
+      if (!/anthropic|claude/i.test(p.inferenceProfileId ?? "")) continue;
+      models.set(p.inferenceProfileId, {
+        id: p.inferenceProfileId,
+        name: p.inferenceProfileName || p.inferenceProfileId,
+        kind: "inference-profile",
+      });
+    }
+  } catch (err) {
+    console.warn("[warn] ListInferenceProfiles failed:", err.message);
+  }
+  try {
+    const fm = await control.send(
+      new ListFoundationModelsCommand({ byProvider: "anthropic", byOutputModality: "TEXT" })
+    );
+    for (const m of fm.modelSummaries ?? []) {
+      if (!m.modelId || models.has(m.modelId)) continue;
+      if (!(m.inferenceTypesSupported ?? []).includes("ON_DEMAND")) continue;
+      models.set(m.modelId, { id: m.modelId, name: m.modelName || m.modelId, kind: "foundation" });
+    }
+  } catch (err) {
+    console.warn("[warn] ListFoundationModels failed:", err.message);
+  }
+
+  const list = [...models.values()].sort((a, b) => b.id.localeCompare(a.id));
+  if (!list.length) {
+    return res.status(502).json({
+      error:
+        "モデル一覧を取得できませんでした。IAM権限 (bedrock:ListInferenceProfiles / ListFoundationModels) を確認するか、画面のモデル欄にIDを直接入力してください。",
+    });
+  }
+  res.json({ models: list });
+});
+
+/** Streaming chat. Server-Sent Events: {type:"text"|"thinking"|"usage"|"done"|"error"} */
+app.post("/api/chat", async (req, res) => {
+  const {
+    modelId,
+    messages = [],
+    system = "",
+    temperature = 1,
+    maxTokens = 8192,
+    thinkingBudget = 0,
+  } = req.body ?? {};
+
+  if (!modelId) return res.status(400).json({ error: "modelId is required" });
+
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream; charset=utf-8",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+  const send = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
+
+  const abort = new AbortController();
+  req.on("close", () => abort.abort());
+
+  // Bedrock rejects document names with symbols, extensions or repeated spaces.
+  const safeName = (n, i) =>
+    (String(n || "").replace(/\.[^.]+$/, "").replace(/[^\p{L}\p{N} \-()\[\]]/gu, " ").replace(/\s+/g, " ").trim() ||
+      `document ${i + 1}`).slice(0, 64);
+
+  const toContent = (m) => {
+    const blocks = [];
+    (m.files ?? []).forEach((f, i) => {
+      let bytes, format = f.format, kind = f.kind;
+      if (f.path) {
+        if (!insideRoots(f.path)) throw new Error(`許可フォルダ外のパスです: ${f.path}`);
+        const ext = path.extname(f.path).toLowerCase();
+        kind = IMAGE_FORMATS[ext] ? "image" : DOC_FORMATS[ext] ? "document" : null;
+        if (!kind) throw new Error(`対応していない形式です: ${f.path}`);
+        format = kind === "image" ? IMAGE_FORMATS[ext] : DOC_FORMATS[ext];
+        const st = fs.statSync(f.path);
+        if (st.size > MAX_FILE_BYTES) throw new Error(`4.5MBを超えています: ${f.path}`);
+        bytes = fs.readFileSync(f.path);
+      } else {
+        bytes = Buffer.from(f.data, "base64");
+      }
+      if (kind === "image") {
+        blocks.push({ image: { format, source: { bytes } } });
+      } else {
+        blocks.push({
+          document: { format, name: safeName(f.name, i), source: { bytes } },
+        });
+      }
+    });
+    if (m.content?.trim()) blocks.push({ text: m.content });
+    else if (!blocks.length) blocks.push({ text: "(empty)" });
+    else blocks.push({ text: "添付ファイルを確認してください。" });
+    return blocks;
+  };
+
+  const useThinking = Number(thinkingBudget) > 0;
+  let input;
+  try {
+    input = {
+    modelId,
+    messages: messages.map((m) => ({ role: m.role, content: toContent(m) })),
+    inferenceConfig: {
+      maxTokens: Number(maxTokens),
+      // temperature is rejected when extended thinking is on
+      ...(useThinking ? {} : { temperature: Number(temperature) }),
+    },
+    ...(system ? { system: [{ text: system }] } : {}),
+    ...(useThinking
+      ? {
+          additionalModelRequestFields: {
+            thinking: { type: "enabled", budget_tokens: Number(thinkingBudget) },
+          },
+        }
+      : {}),
+    };
+  } catch (err) {
+    send({ type: "error", message: err.message });
+    send({ type: "done" });
+    return res.end();
+  }
+
+  try {
+    const out = await runtime.send(new ConverseStreamCommand(input), {
+      abortSignal: abort.signal,
+    });
+    for await (const event of out.stream ?? []) {
+      if (event.contentBlockDelta?.delta?.text) {
+        send({ type: "text", text: event.contentBlockDelta.delta.text });
+      } else if (event.contentBlockDelta?.delta?.reasoningContent?.text) {
+        send({ type: "thinking", text: event.contentBlockDelta.delta.reasoningContent.text });
+      } else if (event.metadata?.usage) {
+        send({ type: "usage", usage: event.metadata.usage });
+      } else if (event.messageStop) {
+        send({ type: "stop", reason: event.messageStop.stopReason });
+      } else if (
+        event.internalServerException ||
+        event.modelStreamErrorException ||
+        event.throttlingException ||
+        event.validationException
+      ) {
+        const e =
+          event.internalServerException ||
+          event.modelStreamErrorException ||
+          event.throttlingException ||
+          event.validationException;
+        send({ type: "error", message: e.message || "stream exception" });
+      }
+    }
+    send({ type: "done" });
+  } catch (err) {
+    if (err.name !== "AbortError") {
+      console.error("[chat]", err);
+      send({ type: "error", message: `${err.name}: ${err.message}` });
+    }
+  } finally {
+    res.end();
+  }
+});
+
+app.listen(PORT, "127.0.0.1", () => {
+  console.log(`\n  Bedrock Chat  →  http://localhost:${PORT}`);
+  console.log(`  region : ${REGION}`);
+  console.log(`  proxy  : ${proxyUrl || "(none)"}`);
+  console.log(`  ca     : ${caPath || "(system default)"}\n`);
+});

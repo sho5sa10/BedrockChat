@@ -1,0 +1,17 @@
+{
+  "name": "bedrock-chat",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local chat UI for Claude on Amazon Bedrock",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-bedrock": "^3.750.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.750.0",
+    "@smithy/node-http-handler": "^4.0.0",
+    "express": "^4.21.2",
+    "https-proxy-agent": "^7.0.6"
+  }
+}
