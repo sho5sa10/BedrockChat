@@ -1,7 +1,50 @@
 # Bedrock Chat — Claude on Amazon Bedrock
 
-Claude Code と同じ AWS 認証情報を使って、ブラウザからチャットできるローカルWebアプリです。
-社内PC上だけで動き、外部SaaSは一切経由しません（通信先は Bedrock エンドポイントのみ）。
+Amazon Bedrock を利用する企業向けのローカルチャットアプリです。Claude Code と同じ AWS 認証情報を利用し、通信先は Bedrock のみ。社内セキュリティポリシーを考慮し、会話履歴や添付ファイルはローカルで管理します。
+
+## 特徴
+
+- ✅ Claude Code と同じ AWS 認証情報を利用
+- ✅ 通信先は Amazon Bedrock のみ（外部SaaSを経由しない）
+- ✅ ストリーミング表示・生成の途中停止
+- ✅ ファイル添付・許可フォルダからの参照
+- ✅ 拡張思考（Thinking）表示に対応
+- ✅ Zscaler 等のSSLインスペクション環境に対応（プロキシ・CA証明書設定）
+- ✅ Windows PC上だけで完結、127.0.0.1 のみ待ち受け
+
+## アーキテクチャ
+
+```
+ブラウザ (localhost)
+      │  HTTP / SSE
+      ▼
+Node.js / Express サーバー（127.0.0.1のみ待受）
+      │  Bedrock Converse Stream API
+      ▼
+Amazon Bedrock ── Claude
+```
+
+## 画面イメージ
+
+![チャット画面](docs/mockup.svg)
+![設定パネル](docs/mockup-settings.svg)
+![ファイル添付](docs/mockup-attach.svg)
+
+## 対応モデル
+
+Bedrock でオンデマンド提供されている Anthropic のモデル（Claude Sonnet / Opus / Haiku 系の推論プロファイル）に対応しています。画面のモデル欄はアカウントから自動取得され、権限がない場合はIDを直接入力できます。Anthropic以外のモデル（Amazon Nova等）は現状スコープ外です。
+
+## セキュリティ
+
+- 通信先は Amazon Bedrock のみ（他の外部サービスへは通信しません）
+- 会話履歴はブラウザの localStorage に保存し、サーバー側には残しません
+- 添付ファイルの実体はブラウザのメモリ上のみで扱い、履歴にはファイル名だけを保存します
+- フォルダ参照は画面で登録した許可フォルダの配下のみに限定し、範囲外のパスは拒否します
+- サーバーは 127.0.0.1 のみで待ち受けるため、PC外からはアクセスできません
+
+## ライセンス
+
+MIT License（`LICENSE` を参照）。社内利用・改変・再配布は自由です。
 
 ## 必要なもの
 
@@ -35,10 +78,6 @@ npm install
 | `HTTPS_PROXY` | 社内プロキシ（Claude Code と同じ値） |
 | `AWS_CA_BUNDLE` | SSLインスペクション用のルート証明書 (PEM) |
 | `PORT` | 既定 3210 |
-
-## 画面イメージ
-
-![Bedrock Chat 画面イメージ](docs/mockup.svg)
 
 ## 機能
 
