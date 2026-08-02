@@ -1,6 +1,6 @@
 # Bedrock Chat — Claude on Amazon Bedrock
 
-Amazon Bedrock を利用する企業向けのローカルチャットアプリです。Claude Code と同じ AWS 認証情報を利用し、通信先は Bedrock のみ。社内セキュリティポリシーを考慮し、会話履歴や添付ファイルはローカルで管理します。
+Amazon Bedrock 用のローカルチャットアプリです。企業のセキュリティポリシーを考慮し、通信先は Bedrock のみ、会話履歴や添付ファイルはローカルで管理します。Claude Code と同じ AWS 認証情報も利用できます。
 
 ## 特徴
 
@@ -126,3 +126,7 @@ npm config set cafile C:\certs\zscaler-root.pem
 
 `node_modules` を含めた状態でフォルダごと配ると、社内でのインストールが不要になります。
 ポートは 127.0.0.1 のみで待ち受けるため、PC外からはアクセスできません。
+
+## このプロジェクトについて
+
+Claude Code と同じ AWS 認証情報を利用しながら、ブラウザで気軽に Amazon Bedrock を利用したいという目的で作成しました。Claude Code は開発向け、Bedrock Chat は日常的な業務利用向けという位置づけです。社内ネットワークやプロキシ環境、SSLインスペクション環境でも問題なく使えることを重視しています。
