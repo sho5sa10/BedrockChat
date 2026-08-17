@@ -14,12 +14,12 @@ import {
   ListInferenceProfilesCommand,
   ListFoundationModelsCommand,
 } from "@aws-sdk/client-bedrock";
+import { CodeAgent } from "./code-agent/index.js";
+import { CodeSessionManager } from "./code-agent/sessions.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const PORT = Number(process.env.PORT || 3210);
-const REGION =
-  process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1";
 
 // ---------------------------------------------------------------------------
 // Corporate proxy / SSL inspection
@@ -54,9 +54,22 @@ const requestHandler = new NodeHttpHandler({
   connectionTimeout: 15_000,
 });
 
-const clientConfig = { region: REGION, requestHandler };
+// Region intentionally not set from AWS_REGION/AWS_DEFAULT_REGION here: doing
+// so ourselves shadowed the SDK's own resolver and skipped its fallback to
+// the active AWS profile's `region` in ~/.aws/config, so AWS_PROFILE-only
+// setups (no separate AWS_REGION) silently ran against us-east-1 instead of
+// the profile's actual region. Letting clientConfig omit `region` lets the
+// SDK resolve it the normal way (env vars, then profile config, then IMDS).
+const clientConfig = { requestHandler };
 const runtime = new BedrockRuntimeClient(clientConfig);
 const control = new BedrockClient(clientConfig);
+
+let REGION = "us-east-1";
+try {
+  REGION = await runtime.config.region();
+} catch (err) {
+  console.warn(`[warn] could not resolve an AWS region automatically, defaulting to ${REGION}: ${err.message}`);
+}
 
 // ---------------------------------------------------------------------------
 const app = express();
@@ -83,6 +96,9 @@ function insideRoots(target) {
     (root) => abs === root || abs.startsWith(root + path.sep)
   );
 }
+
+const codeAgent = new CodeAgent({ insideRoots });
+const codeSessions = new CodeSessionManager({ insideRoots });
 
 app.post("/api/roots", (req, res) => {
   const wanted = Array.isArray(req.body?.roots) ? req.body.roots : [];
@@ -125,6 +141,221 @@ app.get("/api/files", (_req, res) => {
   for (const root of allowedRoots) walk(root, root, 0);
   files.sort((a, b) => b.mtime - a.mtime);
   res.json({ roots: allowedRoots, files, truncated });
+});
+
+/** ------------------------------------------------------------------
+ *  Claude Code integration (Code Agent) — Phase 0/1
+ *  BedrockChat never launches Claude Code itself; it only asks CodeAgent
+ *  to do so, and only ever sees CodeAgent's normalized events — never the
+ *  CLI's own JSONL output (see code-agent/claude-code.js for why: it
+ *  carries far more than should reach the browser). Repository access
+ *  reuses allowedRoots / insideRoots() above, no new access-control
+ *  mechanism. No diff review, no commit/push here — see code-agent/
+ *  index.js for the boundary this keeps.
+ *
+ *  This SSE stream is independent of /api/chat's: different endpoint,
+ *  different payload shape, no shared state.
+ *  ----------------------------------------------------------------- */
+app.get("/api/code/repos", (_req, res) => {
+  res.json({ repos: codeAgent.listRepos(allowedRoots) });
+});
+
+app.post("/api/code/requests", (req, res) => {
+  const result = codeAgent.createRequest(req.body ?? {}, allowedRoots);
+  if (!result.ok) return res.status(result.status).json({ errors: result.errors });
+  res.status(202).json({ requestId: result.request.requestId, status: result.request.status });
+});
+
+function requestSummary(record) {
+  return {
+    requestId: record.requestId,
+    status: record.status,
+    repoPath: record.repoPath,
+    mode: record.mode,
+    createdAt: record.createdAt,
+    startedAt: record.startedAt,
+    updatedAt: record.updatedAt,
+    ...(record.summary ? { summary: record.summary } : {}),
+    ...(record.durationMs != null ? { durationMs: record.durationMs } : {}),
+    ...(record.costUsd != null ? { costUsd: record.costUsd } : {}),
+    ...(record.error ? { error: record.error } : {}),
+    ...(record.git.before || record.git.after ? { git: record.git } : {}),
+  };
+}
+
+app.get("/api/code/requests/:id", (req, res) => {
+  const record = codeAgent.getRequest(req.params.id);
+  if (!record) return res.status(404).json({ error: "not found" });
+  res.json(requestSummary(record));
+});
+
+app.post("/api/code/requests/:id/cancel", (req, res) => {
+  const result = codeAgent.cancelRequest(req.params.id);
+  if (!result.ok) return res.status(result.status).json({ errors: result.errors });
+  res.status(202).json({ requestId: result.request.requestId, status: result.request.status });
+});
+
+app.get("/api/code/requests/:id/events", (req, res) => {
+  const record = codeAgent.getRequest(req.params.id);
+  if (!record) return res.status(404).json({ error: "not found" });
+
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream; charset=utf-8",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+  const send = (evt) => res.write(`event: ${evt.type}\ndata: ${JSON.stringify(evt)}\n\n`);
+
+  for (const evt of record.events) send(evt); // replay history so late/reconnecting subscribers catch up
+
+  const onEvent = (evt) => send(evt);
+  codeAgent.subscribe(record.requestId, onEvent);
+  req.on("close", () => codeAgent.unsubscribe(record.requestId, onEvent));
+});
+
+/** ------------------------------------------------------------------
+ *  Claude Code chat sessions — continuing conversations, as opposed to
+ *  the one-shot /api/code/requests above. A session's first turn is sent
+ *  via POST /sessions; later turns via POST /sessions/:id/messages, which
+ *  resume the same underlying Claude Code conversation (see
+ *  code-agent/sessions.js). Independent endpoint, independent SSE stream —
+ *  no shared state with /api/chat or /api/code/requests.
+ *  ----------------------------------------------------------------- */
+function sessionSummary(record) {
+  return {
+    sessionId: record.sessionId,
+    status: record.status,
+    repoPath: record.repoPath,
+    mode: record.mode,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    eventCount: record.events.length,
+    // The event index the current (or most recently run) turn began at —
+    // lets a client reattach its SSE stream after losing the connection
+    // (e.g. a browser refresh) and skip only prior turns' replayed events.
+    turnStartIndex: record.turnStartIndex,
+    busy: record.busy,
+    workflow: record.workflow,
+    ...(record.error ? { error: record.error } : {}),
+  };
+}
+
+app.post("/api/code/sessions", (req, res) => {
+  const result = codeSessions.createSession(req.body ?? {}, allowedRoots);
+  if (!result.ok) return res.status(result.status).json({ errors: result.errors });
+  res.status(202).json({
+    sessionId: result.session.sessionId,
+    status: result.session.status,
+    turnStartIndex: result.session.turnStartIndex,
+  });
+});
+
+// Creates a session and immediately starts it in the Plan -> Approval ->
+// Edit -> Test -> Diff -> Approval -> Commit workflow — the one-shot
+// "実装を依頼" entry point's counterpart to POST /sessions, sharing the
+// exact same workflow machinery (and the same safety guarantees) as
+// starting a plan mid-conversation with 📋.
+app.post("/api/code/sessions/plan", (req, res) => {
+  const result = codeSessions.createSessionWithPlan(req.body ?? {}, allowedRoots);
+  if (!result.ok) return res.status(result.status).json({ errors: result.errors });
+  res.status(202).json({
+    sessionId: result.session.sessionId,
+    status: result.session.status,
+    turnStartIndex: result.session.turnStartIndex,
+  });
+});
+
+app.post("/api/code/sessions/:id/messages", (req, res) => {
+  const result = codeSessions.sendMessage(req.params.id, req.body?.prompt);
+  if (!result.ok) return res.status(result.status).json({ errors: result.errors });
+  res.status(202).json({
+    sessionId: result.session.sessionId,
+    status: result.session.status,
+    turnStartIndex: result.session.turnStartIndex,
+  });
+});
+
+app.get("/api/code/sessions/:id", (req, res) => {
+  const record = codeSessions.getSession(req.params.id);
+  if (!record) return res.status(404).json({ error: "not found" });
+  res.json(sessionSummary(record));
+});
+
+app.post("/api/code/sessions/:id/cancel", (req, res) => {
+  const result = codeSessions.cancelTurn(req.params.id);
+  if (!result.ok) return res.status(result.status).json({ errors: result.errors });
+  res.status(202).json({ sessionId: result.session.sessionId, status: result.session.status });
+});
+
+/** ------------------------------------------------------------------
+ *  Workflow: Plan -> Human Approval -> Edit -> Test -> Diff -> Human
+ *  Approval -> Commit, layered on top of a chat session (see
+ *  code-agent/sessions.js for the full state diagram). Optional and
+ *  explicit — an ordinary chat session never enters a workflow on its
+ *  own. Only /workflow/commit and the branch creation inside
+ *  /plan/approve ever mutate the repository's git state, and only ever
+ *  in direct response to one of these human-triggered calls.
+ *  ----------------------------------------------------------------- */
+app.post("/api/code/sessions/:id/plan", (req, res) => {
+  const result = codeSessions.startPlan(req.params.id, req.body?.prompt);
+  if (!result.ok) return res.status(result.status).json({ errors: result.errors });
+  res.status(202).json({ sessionId: result.session.sessionId, status: result.session.status });
+});
+
+app.post("/api/code/sessions/:id/workflow/approve", (req, res) => {
+  const result = codeSessions.approvePlan(req.params.id);
+  if (!result.ok) return res.status(result.status).json({ errors: result.errors });
+  res.status(202).json({ sessionId: result.session.sessionId, status: result.session.status });
+});
+
+app.post("/api/code/sessions/:id/workflow/revise", (req, res) => {
+  const result = codeSessions.requestChanges(req.params.id, req.body?.feedback);
+  if (!result.ok) return res.status(result.status).json({ errors: result.errors });
+  res.status(202).json({ sessionId: result.session.sessionId, status: result.session.status });
+});
+
+app.post("/api/code/sessions/:id/workflow/commit", (req, res) => {
+  const result = codeSessions.commitWorkflow(req.params.id, req.body?.message);
+  if (!result.ok) return res.status(result.status).json({ errors: result.errors });
+  res.status(200).json({ sessionId: result.session.sessionId });
+});
+
+app.post("/api/code/sessions/:id/workflow/discard", (req, res) => {
+  const result = codeSessions.discardWorkflow(req.params.id);
+  if (!result.ok) return res.status(result.status).json({ errors: result.errors });
+  res.status(200).json({ sessionId: result.session.sessionId });
+});
+
+app.post("/api/code/sessions/:id/workflow/cancel", (req, res) => {
+  const result = codeSessions.cancelWorkflow(req.params.id);
+  if (!result.ok) return res.status(result.status).json({ errors: result.errors });
+  res.status(200).json({ sessionId: result.session.sessionId });
+});
+
+app.get("/api/code/sessions/:id/diff", (req, res) => {
+  const result = codeSessions.getFullDiff(req.params.id);
+  if (!result.ok) return res.status(result.status).json({ errors: result.errors });
+  res.json(result.diff);
+});
+
+app.get("/api/code/sessions/:id/events", (req, res) => {
+  const record = codeSessions.getSession(req.params.id);
+  if (!record) return res.status(404).json({ error: "not found" });
+
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream; charset=utf-8",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+  const send = (evt) => res.write(`event: ${evt.type}\ndata: ${JSON.stringify(evt)}\n\n`);
+
+  for (const evt of record.events) send(evt); // replay history so late/reconnecting subscribers catch up
+
+  const onEvent = (evt) => send(evt);
+  codeSessions.subscribe(record.sessionId, onEvent);
+  req.on("close", () => codeSessions.unsubscribe(record.sessionId, onEvent));
 });
 
 app.get("/api/config", (_req, res) => {
@@ -298,7 +529,7 @@ app.post("/api/chat", async (req, res) => {
 });
 
 app.listen(PORT, "127.0.0.1", () => {
-  console.log(`\n  Bedrock Chat  →  http://localhost:${PORT}`);
+  console.log(`\n  Claude Code Chat on AWS Bedrock  →  http://localhost:${PORT}`);
   console.log(`  region : ${REGION}`);
   console.log(`  proxy  : ${proxyUrl || "(none)"}`);
   console.log(`  ca     : ${caPath || "(system default)"}\n`);

@@ -1,4 +1,4 @@
-# Bedrock Chat launcher (Windows / 社内プロキシ環境)
+# Claude Code Chat on AWS Bedrock launcher (Windows / 社内プロキシ環境)
 # 使い方: PowerShell で  .\start.ps1
 # ------------------------------------------------------------------
 # ↓ 環境に合わせて書き換えてください（Claude Code で使っている値と同じものでOK）

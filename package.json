@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Local chat UI for Claude on Amazon Bedrock",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock": "^3.750.0",

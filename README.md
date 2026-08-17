@@ -1,4 +1,4 @@
-# Bedrock Chat — Claude on Amazon Bedrock
+# Claude Code Chat on AWS Bedrock
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)
@@ -24,6 +24,7 @@ Amazon Bedrock 用のローカルチャットアプリです。企業のセキ�
 - ✅ 拡張思考（Thinking）表示に対応
 - ✅ Zscaler 等のSSLインスペクション環境に対応（プロキシ・CA証明書設定）
 - ✅ Windows PC上だけで完結、127.0.0.1 のみ待ち受け
+- ✅ 設計相談の内容を、人間の確認を挟んで Claude Code へ引き継ぎ、承認制のワークフローで実装まで一気通貫
 
 ## アーキテクチャ
 
@@ -105,11 +106,13 @@ npm install
 
 | 変数 | 用途 |
 |---|---|
-| `AWS_REGION` | 例 `us-east-1` / `ap-northeast-1` |
-| `AWS_PROFILE` | 名前付きプロファイルを使う場合 |
+| `AWS_REGION` | 例 `us-east-1` / `ap-northeast-1`（未設定なら `AWS_PROFILE` のリージョン設定を使用） |
+| `AWS_PROFILE` | 名前付きプロファイルを使う場合。`~/.aws/config` にそのプロファイルの `region` が設定されていれば、`AWS_REGION` を別途指定しなくても自動的に使われます |
 | `HTTPS_PROXY` | 社内プロキシ（Claude Code と同じ値） |
 | `AWS_CA_BUNDLE` | SSLインスペクション用のルート証明書 (PEM) |
 | `PORT` | 既定 3210 |
+
+リージョンは `AWS_REGION` → `AWS_DEFAULT_REGION` → `AWS_PROFILE` のリージョン設定 → （どれもなければ）`us-east-1` の順で解決します。
 
 ## 機能
 
@@ -132,6 +135,121 @@ npm install
 - 会話履歴はブラウザの localStorage に保存（サーバーには残りません）
 - コードブロックのコピー、会話の Markdown 書き出し
 - 入出力トークン数の表示
+
+## Claude Code連携（設計相談からの実装依頼）
+
+Claude Code Chat on AWS Bedrock で相談した内容を、人間が確認したうえで Claude Code に実装させる連携です。実行は下記の「実装ワークフロー」（Plan → 承認 → 実装 → テスト → Diff確認 → Commit）を通じて行われ、進捗と結果は専用の Claude Codeチャットスレッドとして同じ画面に残ります。
+
+```
+Claude Code Chat on AWS Bedrock で相談
+      │
+      ▼
+人間が実装指示を確認・編集
+      │  「Claude Codeで実装する」→「実装開始」
+      ▼
+新しい Claude Codeチャットスレッドを作成し、
+Code Session Manager が計画（Plan）を開始
+      │
+      ▼
+以降は下記「実装ワークフロー」と同じ
+（承認 → 実装 → テスト → Diff確認 → Commit）
+```
+
+**使い方**
+
+1. `start.ps1` などで Claude Code Chat on AWS Bedrock を起動する
+2. ⚙ の設定パネルで「参照を許可するフォルダ」に、Claude Code を動かしたいリポジトリのパスを登録する
+3. Claude とチャットで設計相談する
+4. Claude の回答に表示される「🛠 Claude Codeで実装する」をクリックする
+5. モーダルで対象 Repository を選択する（手順2で登録したフォルダから選べます）
+6. Implementation Prompt を確認し、必要なら編集する（Claude の回答をそのまま自動送信はしません）
+7. 「実装開始」を押すと、新しい Claude Codeチャットスレッドが作成され、そのプロンプトで計画（Plan）が自動的に始まります
+8. 計画が届いたら、下記「実装ワークフロー」と同じ手順（承認 → 実装 → テスト → Diff確認 → Commit）で進めます
+
+**前提条件**
+
+- `claude`（Claude Code CLI）が PATH 上にあること。`CLAUDE_CLI_PATH` 環境変数でパスを明示的に指定することもできます。
+
+**設計上の要点**
+
+- Claude Code の生の実行イベント（ツール一覧・MCP接続・内部ファイルパスなどを含む）はそのまま画面に出さず、Code Agent が安全な形に正規化してから表示します
+- Repository へのアクセスは、通常のチャットと同じ「許可フォルダ」の仕組みで制限されます。許可フォルダ外は選択できません
+- ファイル変更・commit を伴う実行は、必ず下記の実装ワークフロー（一時ブランチでの作業、明示的な承認、コミットボタンでの確定）を経由します。自動でファイルを書き換えたり commit / push したりすることはありません
+
+## Claude Codeチャット（会話モード）
+
+上記は「1回だけ実装を依頼する」機能ですが、こちらは Claude Code を**継続した会話の相手**として使うモードです。Claude.ai のチャットが使えない環境で、Claude Code をバックエンドにした Claude.ai 相当のチャット体験を提供します。
+
+```
+Claude Code Chat on AWS Bedrock（Claude Codeチャット）
+      │  自然文で質問
+      ▼
+Code Session（Code Agent内）
+      │  1ターン目は起動、2ターン目以降は --resume で継続
+      ▼
+Claude Code（CLI） が対象リポジトリを調査・回答
+      │  進捗イベント（SSE）
+      ▼
+同じチャット画面に回答・ツール利用ログを表示
+```
+
+**使い方**
+
+1. サイドバーの「🛠 Claude Codeで新規チャット」をクリックする
+2. Repository と Mode（既定 `Plan only`）を選んで「開始」
+3. 通常のチャットと同じ入力欄から、そのRepositoryについて自然文で質問する
+4. 2回目以降の発言は同じ Claude Code セッションを継続します（会話履歴を毎回再送信する必要はありません）
+
+このモードのスレッドは、通常の Bedrock チャットのスレッドとは別の種類として扱われ、両者は同じスレッド内で混在しません。サイドバーには専用のアイコン付きで表示されます。
+
+**Bedrock直接チャットとの違い**
+
+| | 通常チャット | Claude Codeチャット |
+|---|---|---|
+| 呼び出し先 | Amazon Bedrock（ConverseStream）を直接呼び出し | ローカルの `claude` CLI を経由（CLIがBedrockをモデルプロバイダとして使用） |
+| 用途 | 文書レビュー・要約・雑談など | Repositoryの調査・質問など |
+| 課金 | AWSのBedrock利用料 | `claude` CLIの起動ごとに実際のClaude Code利用料が発生します |
+| ファイル添付 | 対応 | 非対応（Claude Codeが直接Repositoryを読みます） |
+
+## 実装ワークフロー（Plan → 承認 → 実装 → テスト → Diff確認 → Commit）
+
+Claude Codeチャットの入力欄には、通常の送信ボタンとは別に「📋」ボタンがあります。これは実際にコードを変更してほしいときに使う、承認ポイント付きの安全な実装フローです。
+
+```
+📋 で計画を依頼
+      │
+      ▼
+Claude Codeが計画を提示（ファイルは一切変更しません）
+      │  人間が確認
+      ├─ 修正を依頼 → 計画を練り直し
+      ├─ キャンセル
+      ▼
+「実装を開始」
+      │
+      ▼
+一時ブランチ（ai/<セッションID>）を作成し、その上で実装
+      │
+      ▼
+検出したテストコマンドを自動実行（npm test / pytest / go test など）
+      │
+      ▼
+変更ファイル一覧・テスト結果・Diffを表示
+      │  人間が確認
+      ├─ 修正を依頼 → 実装をやり直し
+      ├─ 破棄 → 変更をすべて取り消し、元のブランチに戻る
+      ▼
+Commit message を確認・編集して「Commitする」
+      │
+      ▼
+その場で commit（push は行いません）
+```
+
+**安全のための設計**
+
+- 一時ブランチの作成は、作業ツリーが汚れていない（未コミットの変更がない）ときのみ実行されます。既存の作業を巻き込みません
+- テストは検出した既定のコマンドのみ実行します。任意のシェルコマンドは実行しません
+- commit は「Commitする」ボタンを押した場合のみ実行されます。それ以外のタイミングで自動的に commit / push されることはありません
+- 「破棄」はこのワークフロー用の一時ブランチだけを削除します。他の変更には影響しません
 
 ## うまくいかないとき
 
@@ -168,4 +286,4 @@ npm config set cafile C:\certs\zscaler-root.pem
 
 ## このプロジェクトについて
 
-Bedrock Chat は、ブラウザから手軽に Amazon Bedrock を利用したい場面を想定して作成しました。Claude Code のようなコーディング支援ツールとは異なり、文書レビューや要約、設計書の確認など、日常業務での利用を意識しています。Claude Code と同じ AWS 認証情報を使い回せる点、社内ネットワークやプロキシ環境、SSLインスペクション環境でも問題なく使える点を重視しています。
+Claude Code Chat on AWS Bedrock は、ブラウザから手軽に Amazon Bedrock を利用したい場面を想定して作成しました。核となる直接チャット機能は、Claude Code のようなコーディング支援ツールとは異なり、文書レビューや要約、設計書の確認など、日常業務での利用を意識しています（Claude Code との連携はその上に乗る追加機能という位置づけです）。Claude Code と同じ AWS 認証情報を使い回せる点、社内ネットワークやプロキシ環境、SSLインスペクション環境でも問題なく使える点を重視しています。
