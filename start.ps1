@@ -1,30 +1,81 @@
-﻿# Bedrock Chat launcher (Windows / 社内プロキシ環境)
+﻿# Claude Code Chat on AWS Bedrock launcher (Windows)
 # 使い方: PowerShell で  .\start.ps1
-# ------------------------------------------------------------------
-# 既に環境変数が設定済み（Claude Code ランチャー経由で起動した場合など）なら
-# それを使い、未設定の場合のみ下記の既定値にフォールバックします。
-if (-not $env:AWS_REGION)  { $env:AWS_REGION  = "ap-northeast-1" }
-if (-not $env:AWS_PROFILE) { $env:AWS_PROFILE = "claude-code" }
-if (-not $env:AWS_CA_BUNDLE) { $env:AWS_CA_BUNDLE = "C:\Users\shogo.sato\.aws\cacert.pem" }
-if (-not $env:NODE_EXTRA_CA_CERTS) { $env:NODE_EXTRA_CA_CERTS = "C:\Users\shogo.sato\ZscalerRootCertificate.crt" }
-if (-not $env:PORT) { $env:PORT = "3210" }
+#
+# 初回はいくつか質問されます。回答は start.local.json に保存され、
+# 次回以降は聞かれずにそのまま起動します。
+# 設定をやり直したいときは:  .\start.ps1 -Reconfigure
+#
+# start.local.json は Git 管理外なので、環境固有の値（社内プロキシのURL、
+# CA証明書のパス、SSO以外の独自ログインコマンド等）はすべてここに置く。
+# 対話で聞かれない任意項目:
+#   "LOGIN_COMMAND": "aws login"   … 認証切れ時に実行するログインコマンド
+#                                     （未指定なら "aws sso login"）
 
-# HTTPS_PROXY が未設定の場合のみ、Azure VM か物理PC かを自動判定
-# （すでに設定済みならランチャー側の判定・指定をそのまま使う）
-if (-not $env:HTTPS_PROXY) {
-    try {
-        $null = Invoke-WebRequest -Uri "http://169.254.169.254/metadata/instance?api-version=2021-02-01" `
-            -Headers @{"Metadata"="true"} -TimeoutSec 2 -UseBasicParsing -ErrorAction Stop
-        $env:HTTP_PROXY  = "http://proxygate20.nic.nec.co.jp:8080/"
-        $env:HTTPS_PROXY = $env:HTTP_PROXY
-        Write-Host "[Proxy] Azure VM を検出。社内Proxy を設定: $env:HTTPS_PROXY" -ForegroundColor Green
-    } catch {
-        Write-Host "[Proxy] 物理PC を検出。Proxy 未設定（Zscaler経由）" -ForegroundColor Yellow
-    }
-}
-# ------------------------------------------------------------------
+param(
+    [switch]$Reconfigure
+)
 
 Set-Location -Path $PSScriptRoot
+
+$configPath = Join-Path $PSScriptRoot "start.local.json"
+
+function Read-SavedConfig {
+    if (Test-Path $configPath) {
+        try { return Get-Content $configPath -Raw | ConvertFrom-Json } catch { return $null }
+    }
+    return $null
+}
+
+function Ask([string]$Prompt, [string]$Default) {
+    $suffix = if ($Default) { " [$Default]" } else { " [空欄でOK]" }
+    $answer = Read-Host "$Prompt$suffix"
+    if ([string]::IsNullOrWhiteSpace($answer)) { return $Default }
+    return $answer
+}
+
+$config = Read-SavedConfig
+if (-not $config -or $Reconfigure) {
+    Write-Host ""
+    Write-Host "=== 初回セットアップ ===" -ForegroundColor Cyan
+    Write-Host "わからない項目は空欄のままEnterで進めてください。あとで $configPath を直接編集しても、"
+    Write-Host ".\start.ps1 -Reconfigure でやり直しても構いません。"
+    Write-Host ""
+
+    $region  = Ask "AWSリージョン（例: us-east-1。空欄ならAWSプロファイル側の設定から自動解決）" ""
+    $profile = Ask "AWSプロファイル名（'aws configure --profile 名前' で作ったもの。空欄ならdefault）" ""
+
+    $useProxy = Read-Host "社内プロキシ経由でAWSに接続する必要がありますか？ (y/N)"
+    $proxy = ""
+    $caBundle = ""
+    if ($useProxy -match "^[yY]") {
+        $proxy    = Ask "プロキシURL（例: http://proxy.example.co.jp:8080）" ""
+        $caBundle = Ask "SSLインスペクション用CA証明書のパス（PEM形式。不要なら空欄）" ""
+    }
+
+    $port = Ask "起動ポート番号" "3210"
+
+    $config = [pscustomobject]@{
+        AWS_REGION    = $region
+        AWS_PROFILE   = $profile
+        HTTPS_PROXY   = $proxy
+        AWS_CA_BUNDLE = $caBundle
+        PORT          = $port
+    }
+    $config | ConvertTo-Json | Set-Content -Path $configPath -Encoding utf8
+    Write-Host ""
+    Write-Host "設定を $configPath に保存しました。次回からはこの画面は出ません。" -ForegroundColor Green
+    Write-Host ""
+}
+
+if ($config.AWS_REGION)  { $env:AWS_REGION  = $config.AWS_REGION }
+if ($config.AWS_PROFILE) { $env:AWS_PROFILE = $config.AWS_PROFILE }
+if ($config.HTTPS_PROXY) { $env:HTTPS_PROXY = $config.HTTPS_PROXY }
+if ($config.AWS_CA_BUNDLE) {
+    $env:AWS_CA_BUNDLE = $config.AWS_CA_BUNDLE
+    # Node と AWS CLI で別の証明書を使う環境向けに、明示指定があればそちらを優先する。
+    $env:NODE_EXTRA_CA_CERTS = if ($config.NODE_EXTRA_CA_CERTS) { $config.NODE_EXTRA_CA_CERTS } else { $config.AWS_CA_BUNDLE }
+}
+$env:PORT = if ($config.PORT) { $config.PORT } else { "3210" }
 
 # 前回の起動時にPowerShellウィンドウを「×」で閉じるなどした場合、node.exe が
 # コンソール終了イベントを受け取れずポートを掴んだまま孤立して残ることがある。
@@ -35,7 +86,7 @@ foreach ($existingPid in $existingPids) {
     try {
         $proc = Get-Process -Id $existingPid -ErrorAction Stop
         if ($proc.ProcessName -eq "node") {
-            Write-Host "[Cleanup] ポート $($env:PORT) を使用している古い BedrockChat プロセス (PID $existingPid) を終了します" -ForegroundColor Yellow
+            Write-Host "[Cleanup] ポート $($env:PORT) を使用している古いサーバープロセス (PID $existingPid) を終了します" -ForegroundColor Yellow
             Stop-Process -Id $existingPid -Force
             Start-Sleep -Milliseconds 500
         } else {
@@ -46,20 +97,25 @@ foreach ($existingPid in $existingPids) {
 
 # AWSのセッションが切れている場合、サーバーだけ起動できてもチャット送信時に
 # CredentialsProviderError で応答が返らず「反応なし」に見える。起動前に検出する。
-Write-Host "[Auth] AWS認証状態を確認中..." -ForegroundColor Cyan
-$identityCheck = aws sts get-caller-identity --profile $env:AWS_PROFILE 2>&1
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "[Auth] 認証切れ、または未ログインです。再ログインします..." -ForegroundColor Yellow
-    Write-Host $identityCheck -ForegroundColor DarkYellow
-    aws login --profile $env:AWS_PROFILE
+$profileArgs = if ($env:AWS_PROFILE) { @("--profile", $env:AWS_PROFILE) } else { @() }
+if (Get-Command aws -ErrorAction SilentlyContinue) {
+    Write-Host "[Auth] AWS認証状態を確認中..." -ForegroundColor Cyan
+    $identityCheck = & aws sts get-caller-identity @profileArgs 2>&1
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "[Auth] ログインに失敗しました。手動で 'aws login --profile $($env:AWS_PROFILE)' を実行してください。" -ForegroundColor Red
-        Read-Host "Enterキーで終了"
-        exit 1
+        $loginCommand = if ($config.LOGIN_COMMAND) { $config.LOGIN_COMMAND } else { "aws sso login" }
+        Write-Host "[Auth] 認証切れ、または未ログインです。'$loginCommand' で再ログインします..." -ForegroundColor Yellow
+        Write-Host $identityCheck -ForegroundColor DarkYellow
+        $loginParts = $loginCommand -split "\s+"
+        & $loginParts[0] @($loginParts[1..($loginParts.Length - 1)]) @profileArgs
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[Auth] ログインに失敗しました。手動で '$loginCommand $($profileArgs -join ' ')' を実行してください。" -ForegroundColor Red
+            Read-Host "Enterキーで終了"
+            exit 1
+        }
+        Write-Host "[Auth] 再ログイン成功" -ForegroundColor Green
+    } else {
+        Write-Host "[Auth] 認証は有効です。" -ForegroundColor Green
     }
-    Write-Host "[Auth] 再ログイン成功" -ForegroundColor Green
-} else {
-    Write-Host "[Auth] 認証は有効です。" -ForegroundColor Green
 }
 
 if (-not (Test-Path "node_modules")) {
