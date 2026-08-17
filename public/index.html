@@ -1789,6 +1789,10 @@ $("ccNewModal").addEventListener("click", (e) => { if (e.target.id === "ccNewMod
 $("shortcutsClose").onclick = () => { $("shortcutsModal").hidden = true; };
 $("shortcutsModal").addEventListener("click", (e) => { if (e.target.id === "shortcutsModal") $("shortcutsModal").hidden = true; });
 document.addEventListener("keydown", (e) => {
+  // The thread kebab menu only auto-closes on outside click; keyboard-only
+  // flows (e.g. Enter to send) never fire a click, so it could otherwise
+  // stay stuck open indefinitely across turns. Any keypress dismisses it.
+  if (!$("threadMenu").hidden) closeThreadMenu();
   if (e.key === "Escape") {
     if (!$("codeModal").hidden) closeCodeModal();
     if (!$("ccNewModal").hidden) closeNewClaudeCodeChat();
