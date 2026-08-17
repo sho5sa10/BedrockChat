@@ -4,14 +4,36 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Bedrock Chat — Claude on Bedrock</title>
+<script>
+  try {
+    const t = JSON.parse(localStorage.getItem("chat.theme") || '"dark"');
+    if (t === "light") document.documentElement.setAttribute("data-theme", "light");
+  } catch {}
+</script>
 <style>
   :root{
     --navy:#1E3A5F; --cyan:#06B6D4; --blue:#3B82F6;
     --bg:#0C1622; --bg-2:#111F31; --panel:#16283D; --line:#22405F;
     --ink:#E8EFF6; --ink-dim:#9DB3C9; --ink-faint:#6C88A5;
     --user:#1B3350; --radius:12px;
+    --on-accent:#06202E;
+    --code-bg:#0A121C; --code-ink:#8BE9FD;
+    --ctx-track:#06101C; --ctx-track-line:#2E4A68;
+    --err-bg:#2A1618; --err-border:#7F3B3B; --err-ink:#FCA5A5;
+    --header-bg:rgba(12,22,34,.85);
     --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Noto Sans Mono",monospace;
     --sans:"Inter","Hiragino Kaku Gothic ProN","Yu Gothic UI","Noto Sans JP",system-ui,sans-serif;
+  }
+  :root[data-theme="light"]{
+    --navy:#DCE7F5; --cyan:#0891B2; --blue:#2563EB;
+    --bg:#F4F7FB; --bg-2:#FFFFFF; --panel:#E7EEF6; --line:#D3DFEC;
+    --ink:#152437; --ink-dim:#4B6178; --ink-faint:#7D93A8;
+    --user:#E1EAF6;
+    --on-accent:#FFFFFF;
+    --code-bg:#0F1B2B; --code-ink:#67D8F0;
+    --ctx-track:#E4ECF5; --ctx-track-line:#C4D3E4;
+    --err-bg:#FDECEC; --err-border:#F1B4B4; --err-ink:#B42323;
+    --header-bg:rgba(255,255,255,.85);
   }
   *{box-sizing:border-box}
   html,body{height:100%;margin:0}
@@ -28,24 +50,39 @@
   .dot{width:9px;height:9px;border-radius:50%;background:var(--cyan);box-shadow:0 0 12px var(--cyan)}
   .newchat{margin:0 12px 10px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;display:flex;gap:8px;align-items:center;font-size:14px}
   .newchat:hover{background:var(--panel);border-color:var(--cyan)}
+  .search{margin:0 12px 8px;padding:7px 10px;font-size:13px;width:calc(100% - 24px)}
   .threads{flex:1;overflow-y:auto;padding:4px 8px 12px}
-  .thread{display:flex;align-items:center;gap:6px;padding:8px 10px;border-radius:8px;font-size:13.5px;color:var(--ink-dim);cursor:pointer;white-space:nowrap}
+  .section-label{padding:12px 10px 6px;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint);display:flex;align-items:center;gap:5px}
+  .section-label:first-child{padding-top:6px}
+  .thread{display:flex;align-items:center;gap:2px;padding:8px 8px 8px 10px;border-radius:8px;font-size:13.5px;color:var(--ink-dim);cursor:pointer;white-space:nowrap}
   .thread:hover{background:var(--panel);color:var(--ink)}
   .thread.active{background:var(--panel);color:var(--ink);box-shadow:inset 2px 0 0 var(--cyan)}
   .thread .t{flex:1;overflow:hidden;text-overflow:ellipsis}
-  .thread .x{opacity:0;font-size:16px;color:var(--ink-faint);padding:0 2px}
-  .thread:hover .x{opacity:1}
-  .thread .x:hover{color:#F87171}
+  .thread .rename-input{flex:1;padding:2px 6px;font-size:13.5px;background:var(--bg);border:1px solid var(--cyan);border-radius:6px}
+  .icon-btn{opacity:0;flex:0 0 auto;width:22px;height:22px;border-radius:6px;display:grid;place-items:center;color:var(--ink-faint)}
+  .thread:hover .icon-btn{opacity:1}
+  .icon-btn:hover{background:var(--bg-2);color:var(--ink)}
+  .icon-btn svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+  .thread.pinned .pin{opacity:1;color:var(--cyan)}
+  .thread.pinned .pin svg{fill:currentColor}
+  .icon-btn.del:hover{color:#F87171}
+  .empty-search{padding:14px 10px;font-size:12.5px;color:var(--ink-faint)}
   .side-foot{border-top:1px solid var(--line);padding:10px 14px;font-size:11.5px;color:var(--ink-faint);font-family:var(--mono)}
 
   /* ---------- main ---------- */
   main{flex:1;display:flex;flex-direction:column;min-width:0}
-  header{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);background:rgba(12,22,34,.85);backdrop-filter:blur(8px)}
+  header{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--header-bg);backdrop-filter:blur(8px)}
   .icon{padding:6px 8px;border-radius:8px;color:var(--ink-dim)}
   .icon:hover{background:var(--panel);color:var(--ink)}
   #model{max-width:420px;background:var(--panel)}
   .spacer{flex:1}
   .badge{font-family:var(--mono);font-size:11px;color:var(--ink-faint);white-space:nowrap}
+  .ctx-wrap{display:flex;align-items:center;gap:8px;padding:4px 9px;border-radius:20px;background:var(--panel);border:1px solid var(--line)}
+  .ctx-bar{width:64px;height:7px;border-radius:4px;background:var(--ctx-track);border:1px solid var(--ctx-track-line);overflow:hidden}
+  .ctx-bar>i{display:block;height:100%;min-width:3px;background:var(--cyan);border-radius:3px;transition:width .3s;box-shadow:0 0 6px var(--cyan)}
+  .ctx-bar.warn>i{background:#F59E0B;box-shadow:0 0 6px #F59E0B}
+  .ctx-bar.danger>i{background:#EF4444;box-shadow:0 0 6px #EF4444}
+  .ctx-pct{font-family:var(--mono);font-size:11px;color:var(--ink-dim);white-space:nowrap;min-width:28px;text-align:right}
 
   #settings{display:none;border-bottom:1px solid var(--line);background:var(--bg-2);padding:14px 16px;gap:16px;flex-wrap:wrap}
   #settings.open{display:flex}
@@ -58,7 +95,7 @@
   .msg{display:flex;gap:14px;margin-bottom:26px}
   .avatar{flex:0 0 30px;height:30px;border-radius:8px;display:grid;place-items:center;font-size:12px;font-weight:700;margin-top:2px}
   .user .avatar{background:var(--user);color:var(--ink-dim)}
-  .assistant .avatar{background:linear-gradient(140deg,var(--blue),var(--cyan));color:#06202E}
+  .assistant .avatar{background:linear-gradient(140deg,var(--blue),var(--cyan));color:var(--on-accent)}
   .body{min-width:0;flex:1}
   .who{font-size:12px;color:var(--ink-faint);margin-bottom:2px;letter-spacing:.04em}
   .content>*:first-child{margin-top:0}
@@ -74,15 +111,35 @@
   .content th,.content td{border:1px solid var(--line);padding:6px 10px;text-align:left}
   .content th{background:var(--panel)}
   code{font-family:var(--mono);font-size:.88em}
-  :not(pre)>code{background:var(--panel);padding:.12em .4em;border-radius:5px;color:#8BE9FD}
-  pre{position:relative;background:#0A121C;border:1px solid var(--line);border-radius:10px;padding:14px 14px 14px;overflow-x:auto;margin:.7em 0}
+  :not(pre)>code{background:var(--panel);padding:.12em .4em;border-radius:5px;color:var(--code-ink)}
+  pre{position:relative;background:var(--code-bg);color:#E8EFF6;border:1px solid var(--line);border-radius:10px;padding:14px 14px 14px;overflow-x:auto;margin:.7em 0}
   pre .copy{position:absolute;top:7px;right:7px;font-size:11px;padding:3px 8px;border:1px solid var(--line);border-radius:6px;color:var(--ink-faint);background:var(--bg-2)}
   pre .copy:hover{color:var(--cyan);border-color:var(--cyan)}
+  pre .preview{position:absolute;top:7px;right:74px;font-size:11px;padding:3px 8px;border:1px solid var(--line);border-radius:6px;color:var(--ink-faint);background:var(--bg-2)}
+  pre .preview:hover,pre .preview.active{color:var(--cyan);border-color:var(--cyan)}
+  .preview-pane{margin:.5em 0 .7em;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#fff}
+  .preview-pane iframe{display:block;width:100%;height:320px;border:none}
+  .preview-pane .preview-bar{display:flex;align-items:center;justify-content:space-between;padding:4px 10px;background:var(--panel);border-bottom:1px solid var(--line);font-size:11px;color:var(--ink-faint)}
   details.think{margin:.4em 0 .7em;border:1px dashed var(--line);border-radius:10px;padding:8px 12px;color:var(--ink-dim);font-size:13.5px}
   details.think summary{cursor:pointer;color:var(--ink-faint);font-size:12px;letter-spacing:.05em;text-transform:uppercase}
-  .err{border:1px solid #7F3B3B;background:#2A1618;color:#FCA5A5;border-radius:10px;padding:10px 12px;font-size:14px}
+  .err{border:1px solid var(--err-border);background:var(--err-bg);color:var(--err-ink);border-radius:10px;padding:10px 12px;font-size:14px}
+  .msg-tools{display:flex;gap:4px;margin-top:6px;opacity:0;transition:opacity .12s}
+  .msg:hover .msg-tools,.msg-tools.show{opacity:1}
+  .msg-tools button{font-size:11.5px;color:var(--ink-faint);padding:3px 7px;border-radius:6px;display:flex;align-items:center;gap:3px}
+  .msg-tools button:hover{color:var(--ink);background:var(--panel)}
+  .edit-box textarea{min-height:64px;font-family:var(--sans);font-size:15px}
+  .edit-actions{display:flex;gap:8px;margin-top:8px}
+  .edit-actions button{font-size:12.5px;padding:6px 12px;border-radius:8px;border:1px solid var(--line)}
+  .edit-actions .save{background:var(--blue);border-color:var(--blue);color:#fff}
+  .edit-actions .save:hover{background:var(--cyan);border-color:var(--cyan);color:var(--on-accent)}
+  .edit-actions .cancel:hover{background:var(--panel)}
   .caret{display:inline-block;width:7px;height:1.05em;background:var(--cyan);vertical-align:-2px;animation:blink 1s steps(2) infinite}
   @keyframes blink{50%{opacity:0}}
+  .typing{display:inline-flex;gap:4px;padding:6px 0}
+  .typing span{width:6px;height:6px;border-radius:50%;background:var(--ink-faint);animation:bounce 1.2s infinite ease-in-out}
+  .typing span:nth-child(2){animation-delay:.15s}
+  .typing span:nth-child(3){animation-delay:.3s}
+  @keyframes bounce{0%,80%,100%{transform:scale(.6);opacity:.4}40%{transform:scale(1);opacity:1}}
   .empty{text-align:center;color:var(--ink-faint);padding:16vh 0 0}
   .empty h2{color:var(--ink);font-weight:600;font-size:22px;margin:0 0 6px}
 
@@ -93,7 +150,7 @@
   .composer textarea{border:none;background:none;padding:8px 0;resize:none;max-height:240px;min-height:24px}
   .composer textarea:focus{outline:none}
   .send{flex:0 0 auto;width:36px;height:36px;border-radius:10px;background:var(--blue);color:#fff;display:grid;place-items:center}
-  .send:hover{background:var(--cyan);color:#06202E}
+  .send:hover{background:var(--cyan);color:var(--on-accent)}
   .send[disabled]{background:var(--panel);color:var(--ink-faint);cursor:not-allowed}
   .send.stop{background:#B91C1C}
   .attach{flex:0 0 auto;width:36px;height:36px;border-radius:10px;color:var(--ink-dim);font-size:16px}
@@ -105,7 +162,7 @@
   .chip b{font-weight:500;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .chip button{color:var(--ink-faint);font-size:14px;line-height:1}
   .chip button:hover{color:#F87171}
-  .chip.bad{border-color:#7F3B3B;color:#FCA5A5}
+  .chip.bad{border-color:var(--err-border);color:var(--err-ink)}
   .files{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 6px}
   .files .chip{background:var(--bg-2)}
   #picker{display:none;max-width:820px;margin:0 auto 10px;background:var(--bg-2);border:1px solid var(--line);border-radius:12px;padding:10px}
@@ -117,6 +174,16 @@
   .pitem .r{font-size:11px;color:var(--ink-faint);font-family:var(--mono);max-width:44%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl}
   .pitem .s{font-size:11px;color:var(--ink-faint);white-space:nowrap}
   .pempty{padding:14px 8px;font-size:13px;color:var(--ink-faint)}
+  #zipPicker{display:none;max-width:820px;margin:0 auto 10px;background:var(--bg-2);border:1px solid var(--line);border-radius:12px;padding:10px}
+  #zipPicker.open{display:block}
+  #zipPicker .zip-head{display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px;color:var(--ink-dim);padding:2px 4px 8px}
+  #zipPicker .zip-head span:last-child{color:var(--ink-faint);font-size:11.5px}
+  #zlist{max-height:230px;overflow-y:auto;margin-top:8px}
+  .zip-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:10px;padding-top:8px;border-top:1px solid var(--line)}
+  .zip-actions button{font-size:12.5px;padding:6px 12px;border-radius:8px;border:1px solid var(--line)}
+  .zip-actions .zip-add{background:var(--blue);border-color:var(--blue);color:#fff}
+  .zip-actions .zip-add:hover{background:var(--cyan);border-color:var(--cyan);color:var(--on-accent)}
+  .zip-actions .zip-cancel:hover{background:var(--panel)}
   .hint{max-width:820px;margin:8px auto 0;font-size:11.5px;color:var(--ink-faint);display:flex;gap:14px}
   @media(max-width:760px){aside{position:absolute;z-index:5;height:100%}aside.hidden{margin-left:-268px}}
   @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
@@ -125,7 +192,11 @@
 <body>
 <aside id="sidebar">
   <div class="brand"><i class="dot"></i>Bedrock Chat<span>on aws</span></div>
-  <button class="newchat" id="newchat">＋ 新しいチャット</button>
+  <button class="newchat" id="newchat">
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+    新しいチャット
+  </button>
+  <input class="search" id="threadSearch" placeholder="スレッドを検索…" />
   <div class="threads" id="threads"></div>
   <div class="side-foot" id="foot">connecting…</div>
 </aside>
@@ -135,12 +206,27 @@
     <button class="icon" id="toggle" title="サイドバー">☰</button>
     <select id="model" title="モデル"><option>読み込み中…</option></select>
     <div class="spacer"></div>
-    <span class="badge" id="usage"></span>
+    <div class="ctx-wrap" id="ctxWrap" style="display:none" title="">
+      <span class="badge" id="usage"></span>
+      <div class="ctx-bar"><i id="ctxFill" style="width:0%"></i></div>
+      <span class="ctx-pct" id="ctxPct"></span>
+    </div>
+    <button class="icon" id="themeToggle" title="テーマ切替"></button>
     <button class="icon" id="gear" title="設定">⚙</button>
     <button class="icon" id="export" title="Markdownで保存">⭳</button>
   </header>
 
   <div id="settings">
+    <div class="field" style="flex:1 1 100%">
+      <label for="stylePreset">応答スタイル</label>
+      <select id="stylePreset">
+        <option value="">既定（システムプロンプトのみ）</option>
+        <option value="concise">簡潔 — 要点だけ短く</option>
+        <option value="formal">正式 — 丁寧語・ビジネス文書調</option>
+        <option value="friendly">フレンドリー — 話し言葉で親しみやすく</option>
+        <option value="technical">技術的 — 専門用語を厭わず詳細に</option>
+      </select>
+    </div>
     <div class="field" style="flex:2 1 340px">
       <label for="system">システムプロンプト</label>
       <textarea id="system" placeholder="例: 日本語で簡潔に回答してください。"></textarea>
@@ -158,6 +244,11 @@
       <input id="think" type="number" min="0" max="32000" step="1024" value="0" />
     </div>
     <div class="field" style="flex:1 1 100%">
+      <label for="memo">メモ（すべての会話に共通で伝える内容）</label>
+      <textarea id="memo" placeholder="例: 私はNode.jsのバックエンドエンジニアです。回答は日本語で。"></textarea>
+      <div style="font-size:11.5px;color:var(--ink-faint);margin-top:5px">ここに書いた内容は毎回のやり取りでClaudeに伝わります（claude.aiの「記憶」の簡易版）</div>
+    </div>
+    <div class="field" style="flex:1 1 100%">
       <label for="roots">参照を許可するフォルダ（1行に1つ）</label>
       <textarea id="roots" placeholder="C:\work\設計書"></textarea>
       <div id="rootsMsg" style="font-size:11.5px;color:var(--ink-faint);margin-top:5px">未設定 — 📁ボタンで選べるようになります</div>
@@ -171,6 +262,15 @@
       <input id="pq" placeholder="ファイル名で絞り込み…" />
       <div id="plist"></div>
     </div>
+    <div id="zipPicker">
+      <div class="zip-head"><span id="zipName"></span><span id="zipMsg"></span></div>
+      <input id="zq" placeholder="zip内のファイル名で絞り込み…" />
+      <div id="zlist"></div>
+      <div class="zip-actions">
+        <button class="zip-add" id="zipAdd">選択したファイルを添付</button>
+        <button class="zip-cancel" id="zipCancel">キャンセル</button>
+      </div>
+    </div>
     <div class="composer" id="composer">
       <div style="flex:1;min-width:0">
         <div id="tray"></div>
@@ -180,7 +280,7 @@
       <button class="attach" id="attach" title="ファイルを添付">📎</button>
       <button class="send" id="send" title="送信">➤</button>
       <input type="file" id="file" multiple hidden
-        accept=".png,.jpg,.jpeg,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.html" />
+        accept=".png,.jpg,.jpeg,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.html,.zip" />
     </div>
     <div class="hint"><span>Enter 送信</span><span>Shift+Enter 改行</span><span>ドラッグ＆ドロップ / 画像は貼り付け可</span><span id="ctx"></span></div>
   </footer>
@@ -200,7 +300,7 @@ const $ = (id) => document.getElementById(id);
 const log = $("log"), scroll = $("scroll");
 
 function newThread(){
-  const t = { id: crypto.randomUUID(), title: "新しいチャット", messages: [], at: Date.now() };
+  const t = { id: crypto.randomUUID(), title: "新しいチャット", messages: [], at: Date.now(), pinned: false };
   threads.unshift(t); currentId = t.id; persist(); render(); return t;
 }
 function current(){ return threads.find(t => t.id === currentId) || newThread(); }
@@ -218,10 +318,17 @@ function persist(){
 
 /* ---------------------------- markdown ---------------------------------- */
 const esc = (s) => s.replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+const PREVIEWABLE_LANGS = new Set(["html", "svg", "xml"]);
+const b64 = (s) => btoa(String.fromCharCode(...new TextEncoder().encode(s)));
 function md(src){
   const blocks = [];
   let s = src.replace(/```(\w*)\n?([\s\S]*?)(?:```|$)/g, (_m, lang, code) => {
-    blocks.push(`<pre data-lang="${esc(lang)}"><button class="copy">コピー</button><code>${esc(code.replace(/\n$/,""))}</code></pre>`);
+    const cleanCode = code.replace(/\n$/, "");
+    const canPreview = PREVIEWABLE_LANGS.has(lang.toLowerCase());
+    const previewBtn = canPreview
+      ? `<button class="preview" data-src="${b64(cleanCode)}">プレビュー</button>`
+      : "";
+    blocks.push(`<pre data-lang="${esc(lang)}"><button class="copy">コピー</button>${previewBtn}<code>${esc(cleanCode)}</code></pre><div class="preview-pane" hidden></div>`);
     return `\u0000${blocks.length - 1}\u0000`;
   });
   s = esc(s);
@@ -250,54 +357,228 @@ function md(src){
 }
 
 /* ----------------------------- rendering -------------------------------- */
+const ICON_PIN = `<svg viewBox="0 0 24 24"><path d="M12 17v5"/><path d="M8 3h8l-1 6 3 3v2H6v-2l3-3-1-6z"/></svg>`;
+const ICON_TRASH = `<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>`;
+
+function renderThreadItem(th){
+  const el = document.createElement("div");
+  el.className = "thread" + (th.id === currentId ? " active" : "") + (th.pinned ? " pinned" : "");
+  el.innerHTML = `<span class="t"></span>
+    <button class="icon-btn pin" title="${th.pinned ? "ピン留めを外す" : "ピン留め"}">${ICON_PIN}</button>
+    <button class="icon-btn del" title="削除">${ICON_TRASH}</button>`;
+  el.querySelector(".t").textContent = th.title;
+  el.onclick = () => { currentId = th.id; persist(); render(); };
+  el.querySelector(".t").ondblclick = (e) => { e.stopPropagation(); startRename(el, th); };
+  el.querySelector(".pin").onclick = (e) => {
+    e.stopPropagation();
+    th.pinned = !th.pinned;
+    persist(); renderThreads();
+  };
+  el.querySelector(".del").onclick = (e) => {
+    e.stopPropagation();
+    threads = threads.filter(x => x.id !== th.id);
+    if (currentId === th.id) currentId = threads[0]?.id ?? null;
+    persist(); if (!threads.length) newThread(); else render();
+  };
+  return el;
+}
+function renderThreads(){
+  const q = ($("threadSearch").value || "").trim().toLowerCase();
+  const matched = threads.filter(th => !q || th.title.toLowerCase().includes(q));
+  $("threads").innerHTML = "";
+  if (!matched.length) {
+    $("threads").innerHTML = `<div class="empty-search">一致するスレッドがありません</div>`;
+    return;
+  }
+  const pinned = matched.filter(th => th.pinned).sort((a, b) => b.at - a.at);
+  const recent = matched.filter(th => !th.pinned).sort((a, b) => b.at - a.at);
+
+  if (pinned.length) {
+    const label = document.createElement("div");
+    label.className = "section-label";
+    label.textContent = "ピン留め";
+    $("threads").appendChild(label);
+    for (const th of pinned) $("threads").appendChild(renderThreadItem(th));
+  }
+  if (recent.length) {
+    const label = document.createElement("div");
+    label.className = "section-label";
+    label.textContent = "最近";
+    $("threads").appendChild(label);
+    for (const th of recent) $("threads").appendChild(renderThreadItem(th));
+  }
+}
+function startRename(el, th){
+  const input = document.createElement("input");
+  input.className = "rename-input";
+  input.value = th.title;
+  el.replaceChild(input, el.querySelector(".t"));
+  input.focus(); input.select();
+  const finish = (commit) => {
+    if (commit && input.value.trim()) th.title = input.value.trim().slice(0, 60);
+    persist(); renderThreads();
+  };
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); finish(true); }
+    if (e.key === "Escape") { e.preventDefault(); finish(false); }
+  });
+  input.addEventListener("blur", () => finish(true));
+}
 function render(){
   const t = threads.find(x => x.id === currentId);
-  $("threads").innerHTML = "";
-  for (const th of threads) {
-    const el = document.createElement("div");
-    el.className = "thread" + (th.id === currentId ? " active" : "");
-    el.innerHTML = `<span class="t"></span><button class="x" title="削除">×</button>`;
-    el.querySelector(".t").textContent = th.title;
-    el.onclick = () => { currentId = th.id; persist(); render(); };
-    el.querySelector(".x").onclick = (e) => {
-      e.stopPropagation();
-      threads = threads.filter(x => x.id !== th.id);
-      if (currentId === th.id) currentId = threads[0]?.id ?? null;
-      persist(); if (!threads.length) newThread(); else render();
-    };
-    $("threads").appendChild(el);
-  }
+  renderThreads();
   log.innerHTML = "";
   if (!t || !t.messages.length) {
     log.innerHTML = `<div class="empty"><h2>何から始めますか？</h2><p>Amazon Bedrock 上の Claude に直接つながっています。</p></div>`;
+    updateContextBar(t);
     return;
   }
-  for (const m of t.messages) log.appendChild(bubble(m.role, m.content, m.thinking, m.files));
+  t.messages.forEach((m, i) => log.appendChild(bubble(m.role, m.content, m.thinking, m.files, false, i)));
   scroll.scrollTop = scroll.scrollHeight;
+  updateContextBar(t);
 }
-function bubble(role, text, thinking, files){
+function bubble(role, text, thinking, files, live, index){
   const el = document.createElement("div");
   el.className = "msg " + role;
+  el.dataset.index = index ?? "";
   const chips = (files ?? []).map(f =>
     `<div class="chip"><span>${f.path ? "📁" : f.kind === "image" ? "🖼" : "📄"}</span><b>${esc(f.name)}</b><span>${fmtSize(f.size)}</span></div>`
   ).join("");
   el.innerHTML = `<div class="avatar">${role === "user" ? "You" : "C"}</div>
     <div class="body"><div class="who">${role === "user" ? "あなた" : "Claude"}</div>
     ${chips ? `<div class="files">${chips}</div>` : ""}
-    <div class="think-slot"></div><div class="content"></div></div>`;
-  setContent(el, text, thinking);
+    <div class="think-slot"></div><div class="content"></div>
+    <div class="msg-tools"></div></div>`;
+  setContent(el, text, thinking, live);
+  wireMsgTools(el, role, index);
   return el;
+}
+function wireMsgTools(el, role, index){
+  if (index === undefined || index === null || index === "") return;
+  const tools = el.querySelector(".msg-tools");
+  const copyBtn = document.createElement("button");
+  copyBtn.textContent = "⧉ コピー";
+  copyBtn.onclick = () => {
+    const t = current();
+    navigator.clipboard.writeText(t.messages[index]?.content || "");
+    copyBtn.textContent = "✓ コピーしました";
+    setTimeout(() => copyBtn.textContent = "⧉ コピー", 1200);
+  };
+  tools.appendChild(copyBtn);
+
+  if (role === "user") {
+    const editBtn = document.createElement("button");
+    editBtn.textContent = "✎ 編集";
+    editBtn.onclick = () => startEdit(el, index);
+    tools.appendChild(editBtn);
+  } else {
+    const regenBtn = document.createElement("button");
+    regenBtn.textContent = "↻ 再生成";
+    regenBtn.onclick = () => regenerate(index);
+    tools.appendChild(regenBtn);
+  }
+}
+function startEdit(el, index){
+  const t = current();
+  const msg = t.messages[index];
+  const body = el.querySelector(".body");
+  const content = el.querySelector(".content");
+  const thinkSlot = el.querySelector(".think-slot");
+  const tools = el.querySelector(".msg-tools");
+  thinkSlot.style.display = "none"; content.style.display = "none"; tools.style.display = "none";
+
+  const box = document.createElement("div");
+  box.className = "edit-box";
+  box.innerHTML = `<textarea>${esc(msg.content)}</textarea>
+    <div class="edit-actions">
+      <button class="save">送信して再生成</button>
+      <button class="cancel">キャンセル</button>
+    </div>`;
+  body.insertBefore(box, tools);
+  const ta = box.querySelector("textarea");
+  ta.style.height = Math.min(ta.scrollHeight, 240) + "px";
+  ta.focus();
+
+  const cleanup = () => { box.remove(); thinkSlot.style.display = ""; content.style.display = ""; tools.style.display = ""; };
+  box.querySelector(".cancel").onclick = () => cleanup();
+  box.querySelector(".save").onclick = () => {
+    if (streaming) { flash("応答の生成中は編集できません"); return; }
+    const val = ta.value.trim();
+    if (!val) return;
+    t.messages = t.messages.slice(0, index);
+    cleanup();
+    render();
+    sendWithText(val, msg.files ?? []);
+  };
+}
+function regenerate(index){
+  if (streaming) { flash("応答の生成中は再生成できません"); return; }
+  const t = current();
+  t.messages = t.messages.slice(0, index);
+  render();
+  continueAssistant();
 }
 function setContent(el, text, thinking, live){
   const slot = el.querySelector(".think-slot");
   slot.innerHTML = thinking
     ? `<details class="think"${live ? " open" : ""}><summary>思考プロセス</summary><div>${md(thinking)}</div></details>`
     : "";
+  if (live && !text && !thinking) {
+    el.querySelector(".content").innerHTML = '<div class="typing"><span></span><span></span><span></span></div>';
+    return;
+  }
   el.querySelector(".content").innerHTML = md(text || "") + (live ? '<span class="caret"></span>' : "");
   el.querySelectorAll("pre .copy").forEach(b => b.onclick = () => {
     navigator.clipboard.writeText(b.parentElement.querySelector("code").textContent);
     b.textContent = "コピーしました"; setTimeout(() => b.textContent = "コピー", 1200);
   });
+  el.querySelectorAll("pre .preview").forEach(b => b.onclick = () => togglePreview(b));
+}
+
+function togglePreview(btn){
+  const pane = btn.closest("pre").nextElementSibling;
+  if (!pane || !pane.classList.contains("preview-pane")) return;
+  const isOpen = !pane.hidden;
+  if (isOpen) {
+    pane.hidden = true;
+    pane.innerHTML = "";
+    btn.classList.remove("active");
+    btn.textContent = "プレビュー";
+    return;
+  }
+  const src = decodeURIComponent(
+    Array.prototype.map.call(atob(btn.dataset.src), c => "%" + c.charCodeAt(0).toString(16).padStart(2, "0")).join("")
+  );
+  // 外部への通信を完全に遮断する（<img src>や<link>等、sandbox="allow-scripts"だけでは
+  // ブロックされないリソース読み込みもCSPで一括禁止する）
+  const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; font-src data:">`;
+  pane.innerHTML = `<div class="preview-bar"><span>プレビュー（サンドボックス内で実行・外部通信は行われません）</span></div>`;
+  const iframe = document.createElement("iframe");
+  iframe.sandbox = "allow-scripts";
+  iframe.srcdoc = csp + src;
+  pane.appendChild(iframe);
+  pane.hidden = false;
+  btn.classList.add("active");
+  btn.textContent = "閉じる";
+}
+
+/* --------------------------- context usage bar --------------------------- */
+const CONTEXT_WINDOW = 200000; // Claude系モデルの標準コンテキスト長（APIから取得不可のため既定値）
+function updateContextBar(t){
+  const wrap = $("ctxWrap");
+  const last = t?.messages?.slice().reverse().find(m => m.usage);
+  if (!last) { wrap.style.display = "none"; return; }
+  const used = last.usage.totalTokens ?? (last.usage.inputTokens + last.usage.outputTokens);
+  const pct = Math.min(100, (used / CONTEXT_WINDOW) * 100);
+  const pctLabel = pct > 0 && pct < 1 ? "<1%" : Math.round(pct) + "%";
+  wrap.style.display = "flex";
+  wrap.title = `コンテキスト使用量: ${used.toLocaleString()} / ${CONTEXT_WINDOW.toLocaleString()} トークン (${pctLabel})`;
+  const fill = $("ctxFill");
+  fill.style.width = Math.max(pct, pct > 0 ? 2 : 0) + "%";
+  $("ctxPct").textContent = pctLabel;
+  const bar = $("ctxWrap").querySelector(".ctx-bar");
+  bar.classList.toggle("warn", pct >= 60 && pct < 85);
+  bar.classList.toggle("danger", pct >= 85);
 }
 
 /* ---------------------------- attachments ------------------------------- */
@@ -308,9 +589,16 @@ let pending = [];
 
 const fmtSize = (n) => n >= 1024*1024 ? (n/1024/1024).toFixed(1)+" MB" : Math.max(1, Math.round(n/1024))+" KB";
 
+const MAX_ZIP_BYTES = 24 * 1024 * 1024;
+
 async function addFiles(list){
   for (const file of list) {
     const ext = (file.name.split(".").pop() || "").toLowerCase();
+    if (ext === "zip") {
+      if (file.size > MAX_ZIP_BYTES) { flash(`${file.name} は24MBを超えています`); continue; }
+      await openZip(file);
+      continue;
+    }
     const kind = IMAGE_FORMATS[ext] ? "image" : DOC_FORMATS[ext] ? "document" : null;
     if (!kind) { flash(`${file.name} は対応していない形式です`); continue; }
     if (file.size > MAX_BYTES) { flash(`${file.name} は 4.5MB を超えています`); continue; }
@@ -421,27 +709,152 @@ $("browse").onclick = async () => {
 $("pq").addEventListener("input", renderPicker);
 $("roots").addEventListener("change", () => { store.set("chat.roots", $("roots").value); registerRoots(); });
 
+/* ------------------------------- zip picker ------------------------------ */
+let zipToken = null;
+let zipEntries = [];
+const zipSelected = new Set();
+
+async function openZip(file){
+  $("ctx").textContent = `${file.name} を展開中…`;
+  const data = await new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(String(r.result).split(",")[1]);
+    r.onerror = () => rej(new Error("読み込みに失敗しました"));
+    r.readAsDataURL(file);
+  }).catch(() => null);
+  if (!data) { flash(`${file.name} を読み込めませんでした`); return; }
+
+  try {
+    const r = await fetch("/api/zip/open", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: file.name, data })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+    if (!d.token) { flash(d.message || "対応する形式のファイルが見つかりませんでした"); return; }
+    zipToken = d.token;
+    zipEntries = d.entries;
+    zipSelected.clear();
+    $("zipName").textContent = file.name;
+    $("zq").value = "";
+    renderZipPicker();
+    $("zipPicker").classList.add("open");
+    $("ctx").textContent = "";
+  } catch (err) {
+    flash(`zipを開けませんでした: ${err.message}`);
+  }
+}
+
+function renderZipPicker(){
+  const q = $("zq").value.trim().toLowerCase();
+  const hits = zipEntries.filter(e => !q || e.name.toLowerCase().includes(q)).slice(0, 200);
+  const list = $("zlist");
+  list.innerHTML = "";
+  $("zipMsg").textContent = `${zipEntries.length}件 / ${zipSelected.size}件選択中`;
+  if (!hits.length) { list.innerHTML = `<div class="pempty">一致するファイルがありません。</div>`; return; }
+  for (const e of hits) {
+    const el = document.createElement("div");
+    el.className = "pitem";
+    const checked = zipSelected.has(e.entryName);
+    el.innerHTML = `<span>${checked ? "☑" : "☐"}</span><span class="n"></span><span class="s">${fmtSize(e.size)}</span>`;
+    el.querySelector(".n").textContent = e.displayName || e.entryName;
+    el.onclick = () => {
+      if (zipSelected.has(e.entryName)) zipSelected.delete(e.entryName);
+      else zipSelected.add(e.entryName);
+      renderZipPicker();
+    };
+    list.appendChild(el);
+  }
+}
+$("zq").addEventListener("input", renderZipPicker);
+$("zipPicker").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && document.activeElement === $("zq")) e.preventDefault();
+});
+$("zipAdd").onclick = () => addSelectedZipEntries();
+$("zipCancel").onclick = () => { zipSelected.clear(); $("zipPicker").classList.remove("open"); };
+
+async function addSelectedZipEntries(){
+  if (!zipSelected.size) { $("zipPicker").classList.remove("open"); return; }
+  const images = pending.filter(f => f.kind === "image").length;
+  const docs = pending.length - images;
+  let addedImages = 0, addedDocs = 0;
+  for (const entryName of zipSelected) {
+    const entry = zipEntries.find(e => e.entryName === entryName);
+    if (!entry) continue;
+    if (entry.kind === "image" && images + addedImages >= 20) { flash("画像は20件までです"); break; }
+    if (entry.kind === "document" && docs + addedDocs >= 5) { flash("文書は5件までです"); break; }
+    try {
+      const r = await fetch("/api/zip/extract", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: zipToken, entryName })
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+      pending.push({ name: d.name, size: d.size, kind: d.kind, format: d.format, data: d.data });
+      if (entry.kind === "image") addedImages++; else addedDocs++;
+    } catch (err) {
+      flash(`${entryName} の展開に失敗しました: ${err.message}`);
+    }
+  }
+  renderTray();
+  $("zipPicker").classList.remove("open");
+  $("input").focus();
+}
+
+/* --------------------------- style presets & memo ------------------------- */
+const STYLE_PRESETS = {
+  concise: "回答は要点だけを短く、簡潔に述べてください。前置きや冗長な説明は省いてください。",
+  formal: "丁寧語・ビジネス文書調で、正式な文章として回答してください。",
+  friendly: "話し言葉に近い、親しみやすくフレンドリーな口調で回答してください。",
+  technical: "専門用語を厭わず、技術的な詳細を省略せずに回答してください。",
+};
+function buildSystemPrompt(){
+  const parts = [];
+  const preset = STYLE_PRESETS[$("stylePreset").value];
+  if (preset) parts.push(preset);
+  const memo = $("memo").value.trim();
+  if (memo) parts.push(memo);
+  const system = $("system").value.trim();
+  if (system) parts.push(system);
+  return parts.join("\n\n");
+}
+
 /* ------------------------------ sending --------------------------------- */
 async function send(){
   if (streaming) { streaming.abort(); return; }
   const text = $("input").value.trim();
   if (!text && !pending.length) return;
-  const modelId = $("model").value;
-  if (!modelId) return;
-
-  const t = current();
-  t.messages.push({ role: "user", content: text, files: pending });
-  if (t.messages.length === 1) t.title = (text || pending[0].name).slice(0, 34);
-  t.at = Date.now();
+  const files = pending;
   pending = []; renderTray();
   $("input").value = ""; $("input").style.height = "auto";
-  render();
+  await sendWithText(text, files);
+}
 
-  const el = bubble("assistant", "", "");
+async function sendWithText(text, files){
+  const modelId = $("model").value;
+  if (!modelId) return;
+  const t = current();
+  const wasEmpty = t.messages.length === 0;
+  t.messages.push({ role: "user", content: text, files });
+  if (wasEmpty) t.title = (text || files[0]?.name || "新しいチャット").slice(0, 34);
+  t.at = Date.now();
+  render();
+  await streamAssistant(t, wasEmpty);
+}
+
+async function continueAssistant(){
+  const t = current();
+  if (!t.messages.length || t.messages[t.messages.length - 1].role !== "user") return;
+  await streamAssistant(t, false);
+}
+
+async function streamAssistant(t, isFirstExchange){
+  const modelId = $("model").value;
+  const el = bubble("assistant", "", "", null, true);
   log.appendChild(el);
   scroll.scrollTop = scroll.scrollHeight;
 
-  let answer = "", thought = "";
+  let answer = "", thought = "", usage = null;
   streaming = new AbortController();
   $("send").classList.add("stop"); $("send").textContent = "■";
 
@@ -452,7 +865,7 @@ async function send(){
       signal: streaming.signal,
       body: JSON.stringify({
         modelId,
-        system: $("system").value,
+        system: buildSystemPrompt(),
         temperature: Number($("temp").value),
         maxTokens: Number($("maxtok").value),
         thinkingBudget: Number($("think").value),
@@ -479,8 +892,10 @@ async function send(){
         const ev = JSON.parse(p.slice(5));
         if (ev.type === "text") answer += ev.text;
         else if (ev.type === "thinking") thought += ev.text;
-        else if (ev.type === "usage") $("usage").textContent =
-          `in ${ev.usage.inputTokens} / out ${ev.usage.outputTokens} tok`;
+        else if (ev.type === "usage") {
+          usage = ev.usage;
+          $("usage").textContent = `in ${ev.usage.inputTokens} / out ${ev.usage.outputTokens} tok`;
+        }
         else if (ev.type === "error") answer += `\n\n> ⚠ ${ev.message}`;
         const stick = atBottom();
         setContent(el, answer, thought, true);
@@ -496,10 +911,24 @@ async function send(){
     streaming = null;
     $("send").classList.remove("stop"); $("send").textContent = "➤";
     setContent(el, answer, thought, false);
-    if (answer || thought) t.messages.push({ role: "assistant", content: answer, thinking: thought });
+    if (answer || thought) t.messages.push({ role: "assistant", content: answer, thinking: thought, usage });
     persist();
+    render();
     $("input").focus();
+    if (isFirstExchange && answer) generateTitle(t, modelId, t.messages[0].content, answer);
   }
+}
+
+async function generateTitle(t, modelId, userText, assistantText){
+  try {
+    const r = await fetch("/api/title", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ modelId, userText, assistantText })
+    });
+    const d = await r.json();
+    if (d.title) { t.title = d.title; persist(); renderThreads(); }
+  } catch {}
 }
 
 /* ------------------------------- wiring --------------------------------- */
@@ -512,7 +941,24 @@ $("input").addEventListener("input", e => {
   e.target.style.height = Math.min(e.target.scrollHeight, 240) + "px";
 });
 $("newchat").onclick = () => newThread();
+$("threadSearch").addEventListener("input", renderThreads);
 $("toggle").onclick = () => $("sidebar").classList.toggle("hidden");
+
+/* ------------------------------- theme ----------------------------------- */
+const ICON_SUN = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>`;
+const ICON_MOON = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.4A9 9 0 1 1 11.6 3 7 7 0 0 0 21 12.4z"/></svg>`;
+function applyTheme(theme){
+  document.documentElement.setAttribute("data-theme", theme);
+  $("themeToggle").innerHTML = theme === "light" ? ICON_MOON : ICON_SUN;
+  $("themeToggle").title = theme === "light" ? "ダークテーマに切替" : "ライトテーマに切替";
+}
+let theme = store.get("chat.theme", "dark");
+applyTheme(theme);
+$("themeToggle").onclick = () => {
+  theme = theme === "light" ? "dark" : "light";
+  store.set("chat.theme", theme);
+  applyTheme(theme);
+};
 $("gear").onclick = () => $("settings").classList.toggle("open");
 $("export").onclick = () => {
   const t = current();
@@ -522,7 +968,7 @@ $("export").onclick = () => {
   a.href = url; a.download = `${t.title.replace(/[\\/:*?"<>|]/g, "_")}.md`; a.click();
   URL.revokeObjectURL(url);
 };
-for (const [id, key] of [["system","chat.system"],["temp","chat.temp"],["maxtok","chat.maxtok"],["think","chat.think"]]) {
+for (const [id, key] of [["system","chat.system"],["temp","chat.temp"],["maxtok","chat.maxtok"],["think","chat.think"],["memo","chat.memo"],["stylePreset","chat.stylePreset"]]) {
   const saved = store.get(key, null);
   if (saved !== null) $(id).value = saved;
   $(id).addEventListener("change", () => store.set(key, $(id).value));
@@ -531,10 +977,15 @@ for (const [id, key] of [["system","chat.system"],["temp","chat.temp"],["maxtok"
 (async function init(){
   const savedRoots = store.get("chat.roots", "");
   if (savedRoots) { $("roots").value = savedRoots; registerRoots(); }
+  let regionLocked = false;
   try {
     const cfg = await (await fetch("/api/config")).json();
-    $("foot").textContent = `${cfg.region}${cfg.proxy ? " · proxy" : ""}${cfg.caBundle ? " · ca" : ""}`;
+    regionLocked = !!cfg.regionLocked;
+    $("foot").textContent = `${cfg.region}${regionLocked ? " · 東京限定" : ""}${cfg.proxy ? " · proxy" : ""}${cfg.caBundle ? " · ca" : ""}`;
   } catch { $("foot").textContent = "server offline"; }
+  const modelPlaceholder = regionLocked
+    ? "モデルIDを入力 (jp.anthropic.* または anthropic.* のみ)"
+    : "モデルIDを入力 (例: apac.anthropic.claude-...)";
   const sel = $("model");
   try {
     const r = await fetch("/api/models");
@@ -550,7 +1001,7 @@ for (const [id, key] of [["system","chat.system"],["temp","chat.temp"],["maxtok"
     if (saved && data.models.some(m => m.id === saved)) sel.value = saved;
     sel.onchange = () => store.set("chat.model", sel.value);
   } catch (err) {
-    sel.outerHTML = `<input id="model" placeholder="モデルIDを入力 (例: apac.anthropic.claude-...)" />`;
+    sel.outerHTML = `<input id="model" placeholder="${modelPlaceholder}" />`;
     const saved = store.get("chat.model", "");
     $("model").value = saved;
     $("model").onchange = () => store.set("chat.model", $("model").value);

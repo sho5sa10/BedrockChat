@@ -1,12 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import https from "node:https";
+import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import express from "express";
+import AdmZip from "adm-zip";
 import { HttpsProxyAgent } from "https-proxy-agent";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
 import {
   BedrockRuntimeClient,
+  ConverseCommand,
   ConverseStreamCommand,
 } from "@aws-sdk/client-bedrock-runtime";
 import {
@@ -20,6 +23,20 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3210);
 const REGION =
   process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1";
+
+// ---------------------------------------------------------------------------
+// Region lock: 東京リージョン(ap-northeast-1)以外に処理がルーティングされる
+// クロスリージョン推論プロファイル（global./apac./us. 等）は一切許可しない。
+// jp.anthropic.* と、プレフィックスなしの基礎モデル（東京リージョンでオン
+// デマンド提供されるもの）のみを許可する。
+// ---------------------------------------------------------------------------
+const JAPAN_ONLY = REGION === "ap-northeast-1";
+function isJapanOnlyModel(modelId) {
+  if (!modelId) return false;
+  if (/^jp\.anthropic\./i.test(modelId)) return true;
+  if (/^anthropic\./i.test(modelId)) return true; // foundation model, no cross-region prefix
+  return false;
+}
 
 // ---------------------------------------------------------------------------
 // Corporate proxy / SSL inspection
@@ -127,9 +144,76 @@ app.get("/api/files", (_req, res) => {
   res.json({ roots: allowedRoots, files, truncated });
 });
 
+/** ------------------------------------------------------------------
+ *  Zip attachments
+ *  Uploaded zip bytes are held in memory only (never written to disk)
+ *  under a short-lived token, so a listing/extract round trip doesn't
+ *  need to re-upload the whole archive. Entries expire automatically.
+ *  ----------------------------------------------------------------- */
+const ZIP_TTL_MS = 10 * 60 * 1000;
+const zipStore = new Map(); // token -> { zip: AdmZip, expiresAt: number }
+
+function pruneExpiredZips() {
+  const now = Date.now();
+  for (const [token, entry] of zipStore) {
+    if (entry.expiresAt < now) zipStore.delete(token);
+  }
+}
+
+app.post("/api/zip/open", (req, res) => {
+  pruneExpiredZips();
+  const { name = "archive.zip", data } = req.body ?? {};
+  if (!data) return res.status(400).json({ error: "data is required" });
+  let zip;
+  try {
+    zip = new AdmZip(Buffer.from(data, "base64"));
+  } catch (err) {
+    return res.status(400).json({ error: `zipを開けませんでした: ${err.message}` });
+  }
+  const entries = [];
+  for (const e of zip.getEntries()) {
+    if (e.isDirectory) continue;
+    if (path.basename(e.entryName).startsWith(".")) continue;
+    const ext = path.extname(e.entryName).toLowerCase();
+    const kind = IMAGE_FORMATS[ext] ? "image" : DOC_FORMATS[ext] ? "document" : null;
+    if (!kind) continue;
+    if (e.header.size > MAX_FILE_BYTES) continue;
+    entries.push({ entryName: e.entryName, name: path.basename(e.entryName), displayName: e.entryName.replace(/\\/g, "/"), size: e.header.size, kind });
+  }
+  if (!entries.length) {
+    return res.json({ token: null, entries: [], message: "対応する形式のファイルが見つかりませんでした" });
+  }
+  const token = crypto.randomUUID();
+  zipStore.set(token, { zip, expiresAt: Date.now() + ZIP_TTL_MS, name });
+  entries.sort((a, b) => a.entryName.localeCompare(b.entryName));
+  res.json({ token, entries });
+});
+
+app.post("/api/zip/extract", (req, res) => {
+  pruneExpiredZips();
+  const { token, entryName } = req.body ?? {};
+  const stored = zipStore.get(token);
+  if (!stored) return res.status(404).json({ error: "zipの受付が期限切れです。もう一度添付してください。" });
+  const entry = stored.zip.getEntry(entryName);
+  if (!entry) return res.status(404).json({ error: "ファイルが見つかりません" });
+  const ext = path.extname(entry.entryName).toLowerCase();
+  const kind = IMAGE_FORMATS[ext] ? "image" : DOC_FORMATS[ext] ? "document" : null;
+  if (!kind) return res.status(400).json({ error: "対応していない形式です" });
+  const bytes = stored.zip.readFile(entry);
+  if (!bytes) return res.status(500).json({ error: "展開に失敗しました" });
+  res.json({
+    name: path.basename(entry.entryName),
+    kind,
+    format: kind === "image" ? IMAGE_FORMATS[ext] : DOC_FORMATS[ext],
+    size: bytes.length,
+    data: bytes.toString("base64"),
+  });
+});
+
 app.get("/api/config", (_req, res) => {
   res.json({
     region: REGION,
+    regionLocked: JAPAN_ONLY,
     proxy: proxyUrl ? proxyUrl.replace(/\/\/.*@/, "//***@") : null,
     caBundle: caPath || null,
   });
@@ -142,6 +226,7 @@ app.get("/api/models", async (_req, res) => {
     const profiles = await control.send(new ListInferenceProfilesCommand({ maxResults: 100 }));
     for (const p of profiles.inferenceProfileSummaries ?? []) {
       if (!/anthropic|claude/i.test(p.inferenceProfileId ?? "")) continue;
+      if (JAPAN_ONLY && !isJapanOnlyModel(p.inferenceProfileId)) continue;
       models.set(p.inferenceProfileId, {
         id: p.inferenceProfileId,
         name: p.inferenceProfileName || p.inferenceProfileId,
@@ -158,6 +243,7 @@ app.get("/api/models", async (_req, res) => {
     for (const m of fm.modelSummaries ?? []) {
       if (!m.modelId || models.has(m.modelId)) continue;
       if (!(m.inferenceTypesSupported ?? []).includes("ON_DEMAND")) continue;
+      if (JAPAN_ONLY && !isJapanOnlyModel(m.modelId)) continue;
       models.set(m.modelId, { id: m.modelId, name: m.modelName || m.modelId, kind: "foundation" });
     }
   } catch (err) {
@@ -171,7 +257,7 @@ app.get("/api/models", async (_req, res) => {
         "モデル一覧を取得できませんでした。IAM権限 (bedrock:ListInferenceProfiles / ListFoundationModels) を確認するか、画面のモデル欄にIDを直接入力してください。",
     });
   }
-  res.json({ models: list });
+  res.json({ models: list, regionLocked: JAPAN_ONLY });
 });
 
 /** Streaming chat. Server-Sent Events: {type:"text"|"thinking"|"usage"|"done"|"error"} */
@@ -186,6 +272,13 @@ app.post("/api/chat", async (req, res) => {
   } = req.body ?? {};
 
   if (!modelId) return res.status(400).json({ error: "modelId is required" });
+  if (JAPAN_ONLY && !isJapanOnlyModel(modelId)) {
+    return res.status(403).json({
+      error:
+        `このモデル (${modelId}) は東京リージョン以外に処理がルーティングされるため使用できません。` +
+        `jp.anthropic.* または anthropic.* (プレフィックスなし) のモデルを選択してください。`,
+    });
+  }
 
   res.writeHead(200, {
     "Content-Type": "text/event-stream; charset=utf-8",
@@ -196,7 +289,7 @@ app.post("/api/chat", async (req, res) => {
   const send = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
 
   const abort = new AbortController();
-  req.on("close", () => abort.abort());
+  res.on("close", () => abort.abort());
 
   // Bedrock rejects document names with symbols, extensions or repeated spaces.
   const safeName = (n, i) =>
@@ -294,6 +387,40 @@ app.post("/api/chat", async (req, res) => {
     }
   } finally {
     res.end();
+  }
+});
+
+/** Short conversation title, generated from the first exchange. */
+app.post("/api/title", async (req, res) => {
+  const { modelId, userText = "", assistantText = "" } = req.body ?? {};
+  if (!modelId) return res.status(400).json({ error: "modelId is required" });
+  if (JAPAN_ONLY && !isJapanOnlyModel(modelId)) {
+    return res.json({ title: null });
+  }
+
+  const prompt =
+    `次の会話に、10〜18文字程度の短い日本語タイトルを1つだけ付けてください。` +
+    `記号や引用符、末尾の句点は付けず、タイトルの文字列だけを出力してください。\n\n` +
+    `ユーザー: ${userText.slice(0, 400)}\n` +
+    `アシスタント: ${assistantText.slice(0, 400)}`;
+
+  try {
+    const out = await runtime.send(
+      new ConverseCommand({
+        modelId,
+        messages: [{ role: "user", content: [{ text: prompt }] }],
+        inferenceConfig: { maxTokens: 40 },
+      })
+    );
+    const title = out.output?.message?.content?.[0]?.text
+      ?.trim()
+      .replace(/^["'「『]|["'」』]$/g, "")
+      .replace(/[。.]$/, "")
+      .slice(0, 40);
+    res.json({ title: title || null });
+  } catch (err) {
+    console.warn("[warn] title generation failed:", err.message);
+    res.json({ title: null });
   }
 });
 
