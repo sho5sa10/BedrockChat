@@ -3,7 +3,7 @@
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)
 ![Amazon Bedrock](https://img.shields.io/badge/Amazon%20Bedrock-Claude-orange.svg)
-[![Latest Release](https://img.shields.io/github/v/release/sho5sa10/BedrockChat)](https://github.com/sho5sa10/BedrockChat/releases/latest)
+[![Latest Release](https://img.shields.io/github/v/release/sho5sa10/Claude-Code-Chat_on_aws_bedrock)](https://github.com/sho5sa10/Claude-Code-Chat_on_aws_bedrock/releases/latest)
 
 > No Docker. No CDK. No CloudFormation. Just run and chat with Amazon Bedrock.
 > Docker も CDK も CloudFormation も不要。実行するだけで Amazon Bedrock とチャットできます。
@@ -20,8 +20,9 @@ Amazon Bedrock 用のローカルチャットアプリです。企業のセキ�
 - ✅ Claude Code と同じ AWS 認証情報を利用
 - ✅ 通信先は Amazon Bedrock のみ（外部SaaSを経由しない）
 - ✅ ストリーミング表示・生成の途中停止
-- ✅ ファイル添付・許可フォルダからの参照
+- ✅ ファイル添付（zipの中身を選んで添付も可）・許可フォルダからの参照
 - ✅ 拡張思考（Thinking）表示に対応
+- ✅ HTML / SVG のコードブロックをその場でプレビュー（外部通信を遮断したサンドボックス内）
 - ✅ Zscaler 等のSSLインスペクション環境に対応（プロキシ・CA証明書設定）
 - ✅ Windows PC上だけで完結、127.0.0.1 のみ待ち受け
 - ✅ 設計相談の内容を、人間の確認を挟んで Claude Code へ引き継ぎ、承認制のワークフローで実装まで一気通貫
@@ -48,11 +49,17 @@ Amazon Bedrock ── Claude
 
 Bedrock でオンデマンド提供されている Anthropic のモデル（Claude Sonnet / Opus / Haiku 系の推論プロファイル）に対応しています。画面のモデル欄はアカウントから自動取得され、権限がない場合はIDを直接入力できます。Anthropic以外のモデル（Amazon Nova等）は現状スコープ外です。
 
+**リージョンロック（東京リージョン利用時）**
+
+リージョンが `ap-northeast-1`（東京）の場合、東京以外へ処理がルーティングされるクロスリージョン推論プロファイル（`global.*` / `apac.*` / `us.*`）は使用できません。`jp.anthropic.*` と、プレフィックスなしの基礎モデル（`anthropic.*`）のみが対象になります。モデル一覧・チャット・タイトル生成のすべてに適用され、有効時はサイドバー下部に「東京限定」と表示されます。データの所在リージョンを東京に限定したい場合の制約です。
+
 ## セキュリティ
 
 - 通信先は Amazon Bedrock のみ（他の外部サービスへは通信しません）
-- 会話履歴はブラウザの localStorage に保存し、サーバー側には残しません
+- 会話履歴はブラウザの localStorage に保存し、同じPC内の `data/history.json` にバックアップします（ブラウザのサイトデータを消しても履歴が失われないようにするためのもので、外部には送信しません）
 - 添付ファイルの実体はブラウザのメモリ上のみで扱い、履歴にはファイル名だけを保存します
+- zip添付は、展開結果をサーバー側でもディスクに書かずメモリ上に10分だけ保持します
+- コードブロックのプレビューは `sandbox="allow-scripts"`（`allow-same-origin` なし）のiframe内で描画し、CSP (`default-src 'none'`) で外部リソースの読み込み・通信をすべて遮断します
 - フォルダ参照は画面で登録した許可フォルダの配下のみに限定し、範囲外のパスは拒否します
 - サーバーは 127.0.0.1 のみで待ち受けるため、PC外からはアクセスできません
 
@@ -72,7 +79,7 @@ MIT License（`LICENSE` を参照）。社内利用・改変・再配布は自�
 
 ### 方法A: GitHub Releases から（npm install 不要）
 
-[Releases](https://github.com/sho5sa10/BedrockChat/releases) から最新の `bedrock-chat-vX.X.X.zip` をダウンロードして展開するだけです。依存パッケージ (`node_modules`) を同梱しているため、Node.js さえ入っていれば `npm install` は不要です。社内配布はこの方法を推奨します。
+[Releases](https://github.com/sho5sa10/Claude-Code-Chat_on_aws_bedrock/releases) から最新の `bedrock-chat-vX.X.X.zip` をダウンロードして展開するだけです。依存パッケージ (`node_modules`) を同梱しているため、Node.js さえ入っていれば `npm install` は不要です。社内配布はこの方法を推奨します。
 
 ```powershell
 cd 展開したフォルダ
@@ -87,8 +94,8 @@ cd 展開したフォルダ
 ### 方法B: ソースから（git clone）
 
 ```powershell
-git clone https://github.com/sho5sa10/BedrockChat.git
-cd BedrockChat
+git clone https://github.com/sho5sa10/Claude-Code-Chat_on_aws_bedrock.git
+cd Claude-Code-Chat_on_aws_bedrock
 npm install
 ```
 
@@ -120,10 +127,13 @@ npm install
 - モデル切り替え（アカウントの推論プロファイルを自動取得）
 - システムプロンプト / temperature / 最大出力トークン
 - 拡張思考（budget を 1024 以上にすると有効、思考プロセスは折りたたみ表示）
+- 応答スタイルのプリセット（簡潔 / 正式 / フレンドリー / 技術的）と、全会話に共通で渡す「メモ」欄
 - ファイル添付（クリップボタン / ドラッグ＆ドロップ / 画像はそのまま貼り付け）
   - 画像: png jpg gif webp（1回20件まで）
   - 文書: pdf doc docx xls xlsx csv txt md html（1回5件まで、Bedrock側でテキスト抽出）
   - 1ファイル 4.5MB まで
+  - zip: 展開して中身の一覧から必要なファイルだけを選んで添付できます（zip自体は24MBまで）。
+    展開結果はサーバー側でもディスクに書かず、メモリ上に10分だけ保持します。
   - 添付の実体はブラウザのメモリ上だけに置き、履歴にはファイル名のみ保存します。
     ページを再読み込みすると添付は外れるため、続けて質問する場合は貼り直してください。
 - 許可フォルダからの参照（📁ボタン）
@@ -132,9 +142,11 @@ npm install
   - 登録はブラウザ側の設定として保存され、サーバーはメモリ上にのみ保持します。
     登録フォルダの外は、パスを直接指定しても読み取りを拒否します。
   - 選んだファイルはパスだけを保持するため、再読み込み後も履歴から選び直せます。
-- 会話履歴はブラウザの localStorage に保存（サーバーには残りません）
-- コードブロックのコピー、会話の Markdown 書き出し
-- 入出力トークン数の表示
+- 会話履歴はブラウザの localStorage に保存し、同じPC内の `data/history.json` にバックアップ
+  （ブラウザのサイトデータを消してしまっても、次回アクセス時に復元されます）
+- 会話タイトルの自動生成（最初の一往復からClaudeが短いタイトルを付けます）
+- コードブロックのコピー、HTML / SVG / XML のその場プレビュー、会話の Markdown 書き出し
+- 入出力トークン数の表示と、コンテキスト使用量バー（200Kトークンに対する概算）
 
 ## Claude Code連携（設計相談からの実装依頼）
 
