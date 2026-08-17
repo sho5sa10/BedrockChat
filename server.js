@@ -405,9 +405,39 @@ app.post("/api/history", (req, res) => {
   }
 });
 
+/**
+ * Turns an AWS SDK error into a specific, actionable Japanese message.
+ * First-run users hitting this endpoint with no AWS setup at all is the
+ * single biggest onboarding wall this app has — the raw SDK error (a
+ * generic "could not load credentials" or an opaque AccessDeniedException)
+ * doesn't tell them what to actually go do about it, so we classify the
+ * handful of failure modes that actually happen and name the fix.
+ */
+function classifyAwsError(err) {
+  const msg = err?.message || String(err);
+  const name = err?.name || "";
+  if (/region is missing/i.test(msg)) {
+    return "AWSの設定が見つかりません。`aws configure` を実行してリージョンと認証情報を設定するか、AWS_REGION / AWS_PROFILE 環境変数を指定してください。";
+  }
+  if (name === "CredentialsProviderError" || /could not load credentials|unable to locate credentials|resolve credentials/i.test(msg)) {
+    return "AWSの認証情報が見つかりません。`aws configure` でアクセスキーを設定するか、AWS_PROFILE 環境変数で使うプロファイルを指定してください。";
+  }
+  if (name === "UnrecognizedClientException" || /security token|invalid.*credentials/i.test(msg)) {
+    return "AWSの認証情報が無効です（期限切れの可能性があります）。認証情報を再取得・再設定してください。";
+  }
+  if (name === "AccessDeniedException" || /access denied|not authorized/i.test(msg)) {
+    return "この認証情報には Bedrock を呼び出す権限がありません。IAMポリシーに bedrock:ListFoundationModels ・ bedrock:ListInferenceProfiles ・ bedrock:InvokeModel を許可するか、AWSコンソールでモデルアクセスを有効化してください。";
+  }
+  if (/getaddrinfo|enotfound|etimedout|econnrefused/i.test(msg)) {
+    return "AWSに接続できませんでした。プロキシ設定 (HTTPS_PROXY) やCA証明書 (AWS_CA_BUNDLE) が必要な環境ではないか確認してください。";
+  }
+  return msg;
+}
+
 /** Model list, read live from the account so IDs never go stale. */
 app.get("/api/models", async (_req, res) => {
   const models = new Map();
+  let lastErr = null;
   try {
     const profiles = await control.send(new ListInferenceProfilesCommand({ maxResults: 100 }));
     for (const p of profiles.inferenceProfileSummaries ?? []) {
@@ -420,6 +450,7 @@ app.get("/api/models", async (_req, res) => {
     }
   } catch (err) {
     console.warn("[warn] ListInferenceProfiles failed:", err.message);
+    lastErr = err;
   }
   try {
     const fm = await control.send(
@@ -432,14 +463,15 @@ app.get("/api/models", async (_req, res) => {
     }
   } catch (err) {
     console.warn("[warn] ListFoundationModels failed:", err.message);
+    lastErr = lastErr ?? err;
   }
 
   const list = [...models.values()].sort((a, b) => b.id.localeCompare(a.id));
   if (!list.length) {
-    return res.status(502).json({
-      error:
-        "モデル一覧を取得できませんでした。IAM権限 (bedrock:ListInferenceProfiles / ListFoundationModels) を確認するか、画面のモデル欄にIDを直接入力してください。",
-    });
+    const hint = lastErr
+      ? classifyAwsError(lastErr)
+      : "IAM権限を確認するか、画面のモデル欄にIDを直接入力してください。";
+    return res.status(502).json({ error: `モデル一覧を取得できませんでした。${hint}` });
   }
   res.json({ models: list });
 });

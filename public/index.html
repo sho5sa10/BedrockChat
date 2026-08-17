@@ -198,6 +198,11 @@
   details.think{margin:.4em 0 .7em;border:1px dashed var(--line);border-radius:10px;padding:8px 12px;color:var(--ink-dim);font-size:13.5px}
   details.think summary{cursor:pointer;color:var(--ink-faint);font-size:12px;letter-spacing:.05em;text-transform:uppercase}
   .err{border:1px solid var(--err-line);background:var(--err-bg);color:var(--err-ink);border-radius:10px;padding:10px 12px;font-size:14px}
+  .setup-banner{display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--err-line);background:var(--err-bg);color:var(--err-ink);padding:9px 16px;font-size:13.5px;line-height:1.5}
+  .setup-banner[hidden]{display:none}
+  .setup-banner span{flex:1}
+  .setup-banner button{flex:none;background:none;border:none;color:inherit;font-size:16px;line-height:1;cursor:pointer;padding:2px 4px;border-radius:6px}
+  .setup-banner button:hover{background:rgba(0,0,0,.08)}
   .caret{display:inline-block;width:7px;height:1.05em;background:var(--accent);vertical-align:-2px;animation:blink 1s steps(2) infinite}
   @keyframes blink{50%{opacity:0}}
   .thinking{display:inline-flex;align-items:center;gap:6px;color:var(--ink-faint);font-size:13.5px}
@@ -377,6 +382,11 @@
     <button class="icon" id="gear" title="設定">⚙</button>
     <button class="icon" id="export" title="Markdownで保存">⭳</button>
   </header>
+
+  <div id="setupBanner" class="setup-banner" hidden>
+    <span id="setupBannerText"></span>
+    <button id="setupBannerClose" title="閉じる">×</button>
+  </div>
 
   <div id="settings">
     <div class="field" style="flex:2 1 340px">
@@ -1155,6 +1165,14 @@ function flash(msg){
   $("ctx").textContent = msg;
   setTimeout(() => { if ($("ctx").textContent === msg) $("ctx").textContent = ""; }, 4000);
 }
+// Unlike flash(), this stays up until closed — for setup problems (missing
+// AWS credentials, no Bedrock access, etc.) that a 4-second toast would
+// blow past before a first-time user even finishes reading it.
+function showSetupBanner(msg){
+  $("setupBannerText").textContent = msg;
+  $("setupBanner").hidden = false;
+}
+$("setupBannerClose").onclick = () => { $("setupBanner").hidden = true; };
 function renderTray(){
   $("tray").innerHTML = "";
   pending.forEach((f, i) => {
@@ -2188,6 +2206,7 @@ for (const [id, key] of [["system","chat.system"],["temp","chat.temp"],["maxtok"
     $("model").value = saved;
     $("model").onchange = () => store.set("chat.model", $("model").value);
     $("ctx").textContent = "モデル一覧の取得に失敗（IDを直接入力してください）";
+    showSetupBanner(err.message || "モデル一覧を取得できませんでした。");
   }
   setSidebarTab(sidebarTab);
   if (!threads.length) newThread(); else render();
