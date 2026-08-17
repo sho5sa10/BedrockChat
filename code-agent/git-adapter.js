@@ -77,10 +77,22 @@ export function commit(repoPath, message) {
  * isolation branch. Safe specifically because createIsolationBranch()
  * refused to start unless the tree was clean beforehand — so everything
  * being discarded here is guaranteed to belong to this workflow, never the
- * user's own pre-existing work.
+ * user's own pre-existing work, *provided the repo is still actually on
+ * that isolation branch*. A workflow can sit open for a long time between
+ * plan approval and discard, during which someone could switch branches or
+ * check something else out by hand in a separate terminal — so this refuses
+ * to run checkout/clean unless HEAD is still exactly where we left it,
+ * rather than blindly wiping whatever happens to be checked out.
  */
 export function discardIsolationBranch(repoPath, branch, baseBranch) {
   if (!isGitRepo(repoPath)) return { ok: false, error: "not a git repository" };
+  const cur = currentBranch(repoPath);
+  if (branch && cur !== branch) {
+    return {
+      ok: false,
+      error: `isolation branch "${branch}" is not currently checked out (repository is on "${cur}") — refusing to discard changes that may not belong to this workflow`,
+    };
+  }
   runGit(["checkout", "--", "."], repoPath);
   runGit(["clean", "-fd"], repoPath);
   if (baseBranch && currentBranch(repoPath) !== baseBranch) {

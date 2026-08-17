@@ -2,22 +2,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { createInterface } from "node:readline";
 import { EventEmitter } from "node:events";
 import fs from "node:fs";
-import { quoteForWindowsShell } from "./shell-utils.js";
-
-// child.kill() alone only signals the immediate child. On Windows that
-// immediate child is cmd.exe (spawned via shell:true — see below), with the
-// real `claude` process one level further down as *its* child; killing just
-// cmd.exe leaves that real process running, un-cancelled. taskkill /T kills
-// the whole tree. POSIX's plain child.kill() doesn't have this problem
-// (no shell wrapper is used there), so it's left as the direct path.
-function killProcessTree(child) {
-  if (!child.pid || child.killed) return;
-  if (process.platform === "win32") {
-    spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true });
-  } else {
-    child.kill("SIGTERM");
-  }
-}
+import { quoteForWindowsShell, killProcessTree } from "./shell-utils.js";
 
 /**
  * Normalizes one line of `claude -p --output-format stream-json` output

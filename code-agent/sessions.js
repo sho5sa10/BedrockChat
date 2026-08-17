@@ -375,11 +375,26 @@ export class CodeSessionManager {
     run.on("event", (evt) => this.#handleEvent(record, evt));
   }
 
+  /**
+   * Appends an event and trims the log to MAX_EVENTS_PER_SESSION, keeping
+   * turnStartIndex — an absolute index into `events` — correct as the front
+   * of the array shifts. Getting this wrong doesn't just mis-render old
+   * history: reconnecting clients skip exactly turnStartIndex replayed
+   * events (see GET .../events), so a stale index makes them skip *into*
+   * the current turn's own events, silently dropping part of a live reply.
+   */
+  #pushEvent(record, stamped) {
+    record.events.push(stamped);
+    if (record.events.length > MAX_EVENTS_PER_SESSION) {
+      record.events.shift();
+      record.turnStartIndex = Math.max(0, record.turnStartIndex - 1);
+    }
+    record.updatedAt = stamped.timestamp;
+  }
+
   #handleEvent(record, evt) {
     const stamped = { ...evt, timestamp: new Date().toISOString() };
-    record.events.push(stamped);
-    if (record.events.length > MAX_EVENTS_PER_SESSION) record.events.shift();
-    record.updatedAt = stamped.timestamp;
+    this.#pushEvent(record, stamped);
 
     if (evt.type === "started") {
       // First turn only: later turns already know claudeSessionId and just resume it.
@@ -457,9 +472,7 @@ export class CodeSessionManager {
 
   #emitWorkflowEvent(record) {
     const stamped = { type: "workflow", workflow: workflowSnapshot(record.workflow), timestamp: new Date().toISOString() };
-    record.events.push(stamped);
-    if (record.events.length > MAX_EVENTS_PER_SESSION) record.events.shift();
-    record.updatedAt = stamped.timestamp;
+    this.#pushEvent(record, stamped);
     this.bus.emit(record.sessionId, stamped);
   }
 

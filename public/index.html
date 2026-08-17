@@ -198,11 +198,11 @@
   details.think{margin:.4em 0 .7em;border:1px dashed var(--line);border-radius:10px;padding:8px 12px;color:var(--ink-dim);font-size:13.5px}
   details.think summary{cursor:pointer;color:var(--ink-faint);font-size:12px;letter-spacing:.05em;text-transform:uppercase}
   .err{border:1px solid var(--err-line);background:var(--err-bg);color:var(--err-ink);border-radius:10px;padding:10px 12px;font-size:14px}
-  .setup-banner{display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--err-line);background:var(--err-bg);color:var(--err-ink);padding:9px 16px;font-size:13.5px;line-height:1.5}
+  .setup-banner{display:flex;align-items:flex-start;gap:10px;border-bottom:1px solid var(--err-line);background:var(--err-bg);color:var(--err-ink);padding:9px 16px;font-size:13.5px;line-height:1.5}
   .setup-banner[hidden]{display:none}
-  .setup-banner span{flex:1}
+  #setupBannerText{flex:1;display:flex;flex-direction:column;gap:6px}
   .setup-banner button{flex:none;background:none;border:none;color:inherit;font-size:16px;line-height:1;cursor:pointer;padding:2px 4px;border-radius:6px}
-  .setup-banner button:hover{background:rgba(0,0,0,.08)}
+  .setup-banner button:hover{background:color-mix(in srgb, currentColor 15%, transparent)}
   .caret{display:inline-block;width:7px;height:1.05em;background:var(--accent);vertical-align:-2px;animation:blink 1s steps(2) infinite}
   @keyframes blink{50%{opacity:0}}
   .thinking{display:inline-flex;align-items:center;gap:6px;color:var(--ink-faint);font-size:13.5px}
@@ -384,7 +384,7 @@
   </header>
 
   <div id="setupBanner" class="setup-banner" hidden>
-    <span id="setupBannerText"></span>
+    <div id="setupBannerText"></div>
     <button id="setupBannerClose" title="閉じる">×</button>
   </div>
 
@@ -563,8 +563,23 @@ function newThread(){
   const t = { id: crypto.randomUUID(), title: "新しいチャット", messages: [], at: Date.now() };
   threads.unshift(t); currentId = t.id; persist(); setSidebarTab("home"); render(); return t;
 }
+// Only call this where "no thread selected" should actually start a new
+// Home chat (send(), sendClaudeCode() right after quick-start sets
+// currentId, etc). Anywhere that's just checking "is thread X the one
+// currently on screen" — including from async callbacks like SSE handlers,
+// which can fire while the user is looking at an empty tab — compare
+// against currentId directly instead; routing that through current() would
+// silently create and switch to a fresh Home thread as a side effect of an
+// unrelated background event.
 function current(){ return threads.find(t => t.id === currentId) || newThread(); }
 let historySyncTimer = null;
+// Only true once init() has confirmed it could actually read the server's
+// backup file. If that read failed (corrupt file, server error, offline),
+// persist() below must NOT sync to the server: doing so would overwrite a
+// possibly-recoverable backup with whatever (possibly empty) state this tab
+// happens to have — silently destroying the exact data this feature exists
+// to protect. Flipped to true after a confirmed-successful GET /api/history.
+let historyBackupHealthy = false;
 function persist(){
   const light = threads.slice(0, 100).map(t => ({
     ...t,
@@ -575,6 +590,7 @@ function persist(){
   }));
   store.set("chat.threads", light);
   store.set("chat.current", currentId);
+  if (!historyBackupHealthy) return;
   // Mirror to the server-side backup file too, debounced so rapid-fire
   // persist() calls don't hammer disk I/O — localStorage above already
   // covers the "instant" case.
@@ -584,7 +600,14 @@ function persist(){
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ threads: light, current: currentId }),
-    }).catch(() => {});
+    }).then((res) => {
+      // A failed write here is a durability problem, not a cosmetic one —
+      // this backup is what's supposed to survive a cleared browser cache,
+      // so silently pretending it succeeded would defeat the whole feature.
+      if (!res.ok) showSetupBanner("会話履歴のサーバー保存に失敗しました。この端末のブラウザ内には残っていますが、サーバー側のバックアップは最新ではありません。");
+    }).catch(() => {
+      showSetupBanner("会話履歴のサーバー保存に失敗しました。この端末のブラウザ内には残っていますが、サーバー側のバックアップは最新ではありません。");
+    });
   }, 500);
 }
 
@@ -1168,11 +1191,19 @@ function flash(msg){
 // Unlike flash(), this stays up until closed — for setup problems (missing
 // AWS credentials, no Bedrock access, etc.) that a 4-second toast would
 // blow past before a first-time user even finishes reading it.
+//
+// A Set, not a single string: the AWS-setup check and the history-backup
+// check both run during init() and can both legitimately fail at once
+// (e.g. a totally fresh install with no AWS config AND no server reachable
+// yet) — overwriting one warning with the other would silently hide a real
+// problem the user still needs to act on.
+const setupWarnings = new Set();
 function showSetupBanner(msg){
-  $("setupBannerText").textContent = msg;
+  setupWarnings.add(msg);
+  $("setupBannerText").innerHTML = [...setupWarnings].map(m => `<div>${esc(m)}</div>`).join("");
   $("setupBanner").hidden = false;
 }
-$("setupBannerClose").onclick = () => { $("setupBanner").hidden = true; };
+$("setupBannerClose").onclick = () => { setupWarnings.clear(); $("setupBanner").hidden = true; };
 function renderTray(){
   $("tray").innerHTML = "";
   pending.forEach((f, i) => {
@@ -1364,7 +1395,7 @@ async function regenerateBedrock(threadId){
   const last = t?.messages.at(-1);
   if (!last || last.role !== "assistant") return;
   t.messages.pop();
-  if (current().id === threadId) render();
+  if (currentId === threadId) render();
   await runBedrockTurn(t);
 }
 
@@ -1437,33 +1468,46 @@ function startClaudeCodeThread(){
 // works with no setup: reuses the last repo/mode if we have one (or the
 // only repo, if there's just one), so a Repository picker only interrupts
 // the flow when it's genuinely ambiguous.
+// True for the whole repo-lookup + thread-creation span, not just the
+// fetch — without this, pressing Enter twice in quick succession (or Enter
+// then clicking send) re-enters this function during the first call's
+// `await fetch(...)`, before a thread even exists to guard against via the
+// usual ccBusy/streaming checks, and creates two threads/sessions for one
+// typed message.
+let quickStartInFlight = false;
 async function quickStartClaudeCode(){
+  if (quickStartInFlight) return;
   const text = $("input").value.trim();
   if (!text) return;
-  const lastRepo = store.get("chat.lastRepo", null);
-  let repoPath = null, repoLabel = null;
+  quickStartInFlight = true;
   try {
-    const r = await fetch("/api/code/repos");
-    const d = await r.json();
-    const repos = d.repos ?? [];
-    if (!repos.length) {
-      flash("Repositoryが未登録です。⚙の設定で許可フォルダを登録してください");
+    const lastRepo = store.get("chat.lastRepo", null);
+    let repoPath = null, repoLabel = null;
+    try {
+      const r = await fetch("/api/code/repos");
+      const d = await r.json();
+      const repos = d.repos ?? [];
+      if (!repos.length) {
+        flash("Repositoryが未登録です。⚙の設定で許可フォルダを登録してください");
+        return;
+      }
+      const matched = lastRepo && repos.find(x => x.path === lastRepo.path);
+      if (matched) { repoPath = matched.path; repoLabel = `${matched.name} (${matched.path})`; }
+      else if (repos.length === 1) { repoPath = repos[0].path; repoLabel = `${repos[0].name} (${repos[0].path})`; }
+    } catch {
+      flash("Repository一覧の取得に失敗しました");
       return;
     }
-    const matched = lastRepo && repos.find(x => x.path === lastRepo.path);
-    if (matched) { repoPath = matched.path; repoLabel = `${matched.name} (${matched.path})`; }
-    else if (repos.length === 1) { repoPath = repos[0].path; repoLabel = `${repos[0].name} (${repos[0].path})`; }
-  } catch {
-    flash("Repository一覧の取得に失敗しました");
-    return;
+
+    if (!repoPath) { openNewClaudeCodeChat(); return; } // ambiguous — let the user pick, typed text stays put
+
+    const mode = store.get("chat.lastMode", "plan");
+    const t = createClaudeCodeThread(repoPath, repoLabel, mode);
+    currentId = t.id; persist(); setSidebarTab("code"); render();
+    await sendClaudeCode();
+  } finally {
+    quickStartInFlight = false;
   }
-
-  if (!repoPath) { openNewClaudeCodeChat(); return; } // ambiguous — let the user pick, typed text stays put
-
-  const mode = store.get("chat.lastMode", "plan");
-  const t = createClaudeCodeThread(repoPath, repoLabel, mode);
-  currentId = t.id; persist(); setSidebarTab("code"); render();
-  await sendClaudeCode();
 }
 
 // One persistent SSE connection per active thread, reused across turns so a
@@ -1543,9 +1587,9 @@ async function maybeReconnectClaudeCode(t){
   if (!data.busy) return; // idle — nothing in flight to reattach to
 
   ccBusy.add(t.id);
-  if (current().id === t.id) setCcSendBusy(true);
+  if (currentId === t.id) setCcSendBusy(true);
   const el = appendAssistantPlaceholder();
-  if (current().id === t.id) { log.appendChild(el); scroll.scrollTop = scroll.scrollHeight; }
+  if (currentId === t.id) { log.appendChild(el); scroll.scrollTop = scroll.scrollHeight; }
   addInterruptButton(el, () => cancelClaudeCodeTurn(t));
 
   const conn = ensureCcConnection(t.id, t.sessionId, data.turnStartIndex);
@@ -1553,7 +1597,7 @@ async function maybeReconnectClaudeCode(t){
     el, answer: "", thought: "", tools: [], meta: null,
     onDone(){
       ccBusy.delete(t.id);
-      if (current().id === t.id) setCcSendBusy(false);
+      if (currentId === t.id) setCcSendBusy(false);
       setContent(el, this.answer, this.thought, false, this.tools, this.meta);
       el.querySelector(".msg-actions")?.remove();
       const now = Date.now();
@@ -1582,17 +1626,17 @@ function setCcSendBusy(busy){
  */
 async function attachCcTurn(t, el, resPromise){
   ccBusy.add(t.id);
-  if (current().id === t.id) setCcSendBusy(true);
+  if (currentId === t.id) setCcSendBusy(true);
   addInterruptButton(el, () => cancelClaudeCodeTurn(t));
 
   const fail = (msg) => {
     ccBusy.delete(t.id);
-    if (current().id === t.id) setCcSendBusy(false);
+    if (currentId === t.id) setCcSendBusy(false);
     setContent(el, msg, "", false, []);
     el.querySelector(".msg-actions")?.remove();
     t.messages.push({ role: "assistant", content: msg, at: Date.now() });
     persist();
-    if (current().id === t.id) $("input").focus();
+    if (currentId === t.id) $("input").focus();
   };
 
   try {
@@ -1607,7 +1651,7 @@ async function attachCcTurn(t, el, resPromise){
         el, answer: "", thought: "", tools: [], meta: null,
         onDone(){
           ccBusy.delete(t.id);
-          if (current().id === t.id) setCcSendBusy(false);
+          if (currentId === t.id) setCcSendBusy(false);
           setContent(el, this.answer, this.thought, false, this.tools, this.meta);
           el.querySelector(".msg-actions")?.remove();
           const now = Date.now();
@@ -1615,7 +1659,7 @@ async function attachCcTurn(t, el, resPromise){
           t.messages.push({ role: "assistant", content: this.answer, thinking: this.thought, tools: this.tools, meta: this.meta, at: now });
           persist();
           notifyTurnComplete(t.title, this.answer);
-          if (current().id === t.id) $("input").focus();
+          if (currentId === t.id) $("input").focus();
           resolvePromise();
         },
       };
@@ -1693,7 +1737,7 @@ async function approveWorkflowPlan(threadId){
   const t = threads.find((x) => x.id === threadId);
   if (!t?.sessionId || ccBusy.has(t.id)) return;
   const el = appendAssistantPlaceholder();
-  if (current().id === threadId) { log.appendChild(el); scroll.scrollTop = scroll.scrollHeight; }
+  if (currentId === threadId) { log.appendChild(el); scroll.scrollTop = scroll.scrollHeight; }
   await attachCcTurn(t, el, fetch(`/api/code/sessions/${encodeURIComponent(t.sessionId)}/workflow/approve`, { method: "POST" }));
 }
 
@@ -1703,9 +1747,9 @@ async function requestWorkflowChanges(threadId, feedback){
   t.messages.push({ role: "user", content: feedback, at: Date.now() });
   t.at = Date.now();
   persist();
-  if (current().id === threadId) render();
+  if (currentId === threadId) render();
   const el = appendAssistantPlaceholder();
-  if (current().id === threadId) { log.appendChild(el); scroll.scrollTop = scroll.scrollHeight; }
+  if (currentId === threadId) { log.appendChild(el); scroll.scrollTop = scroll.scrollHeight; }
   await attachCcTurn(t, el, fetch(`/api/code/sessions/${encodeURIComponent(t.sessionId)}/workflow/revise`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ feedback }),
@@ -1764,7 +1808,7 @@ function ensureWorkflowCard(threadId){
     <div class="wf-steps" id="wfSteps-${threadId}"></div>
     <div class="wf-body" id="wfBody-${threadId}"></div>
   `;
-  if (current().id === threadId) { log.appendChild(card); scroll.scrollTop = scroll.scrollHeight; }
+  if (currentId === threadId) { log.appendChild(card); scroll.scrollTop = scroll.scrollHeight; }
   return card;
 }
 
@@ -1896,7 +1940,7 @@ function renderWorkflow(threadId, wf){
   }
   if (stepsEl) stepsEl.innerHTML = renderWorkflowSteps(wf);
   renderWorkflowBody(threadId, wf);
-  if (current().id === threadId) scroll.scrollTop = scroll.scrollHeight;
+  if (currentId === threadId) scroll.scrollTop = scroll.scrollHeight;
 }
 
 /* ------------------------- Claude Code integration ----------------------- */
@@ -2146,7 +2190,11 @@ $("ccPlan").onclick = startClaudeCodeWorkflow;
 $("toggle").onclick = () => $("sidebar").classList.toggle("hidden");
 $("gear").onclick = () => $("settings").classList.toggle("open");
 $("export").onclick = () => {
-  const t = current();
+  // Deliberately not current() here: its newThread() fallback would create
+  // and switch to a brand-new Home chat out from under someone who's on the
+  // Code tab with nothing selected yet, just because they clicked "save".
+  const t = threads.find(x => x.id === currentId);
+  if (!t || !t.messages.length) { flash("書き出す会話がありません"); return; }
   const body = t.messages.map(m => `## ${m.role === "user" ? "あなた" : "Claude"}\n\n${m.content}`).join("\n\n---\n\n");
   const url = URL.createObjectURL(new Blob([`# ${t.title}\n\n${body}\n`], { type: "text/markdown" }));
   const a = document.createElement("a");
@@ -2170,6 +2218,10 @@ for (const [id, key] of [["system","chat.system"],["temp","chat.temp"],["maxtok"
     const res = await fetch("/api/history");
     if (res.ok) {
       const data = await res.json();
+      // Only from here on is it safe to let persist() write to the server —
+      // see historyBackupHealthy's definition for why an unconfirmed read
+      // must never be followed by a write.
+      historyBackupHealthy = true;
       if (data.threads?.length) {
         threads = data.threads;
         currentId = data.current;
@@ -2178,8 +2230,14 @@ for (const [id, key] of [["system","chat.system"],["temp","chat.temp"],["maxtok"
       } else if (threads.length) {
         persist();
       }
+    } else {
+      console.warn("[history] server backup unavailable (HTTP " + res.status + ") — this session will not overwrite it");
+      showSetupBanner("会話履歴のサーバーバックアップを読み込めませんでした。データ保護のため、このセッションではサーバーへの保存を一時的に無効にしています（ブラウザ内には引き続き保存されます）。");
     }
-  } catch {}
+  } catch {
+    console.warn("[history] server backup unreachable — this session will not overwrite it");
+    showSetupBanner("会話履歴のサーバーバックアップに接続できませんでした。データ保護のため、このセッションではサーバーへの保存を一時的に無効にしています（ブラウザ内には引き続き保存されます）。");
+  }
   const savedRoots = store.get("chat.roots", "");
   if (savedRoots) { $("roots").value = savedRoots; registerRoots(); }
   try {

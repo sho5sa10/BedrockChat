@@ -592,7 +592,11 @@ app.post("/api/chat", async (req, res) => {
   } catch (err) {
     if (err.name !== "AbortError") {
       console.error("[chat]", err);
-      send({ type: "error", message: `${err.name}: ${err.message}` });
+      // Same classifier /api/models uses — a first-run user who typed a
+      // model ID in by hand (because /api/models itself already failed)
+      // hits this exact path next, and deserves the same "here's what to
+      // actually go fix" message rather than a raw SDK error name.
+      send({ type: "error", message: classifyAwsError(err) });
     }
   } finally {
     res.end();

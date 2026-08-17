@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
-import { quoteForWindowsShell } from "./shell-utils.js";
+import { quoteForWindowsShell, killProcessTree } from "./shell-utils.js";
 
 const MAX_OUTPUT_BYTES = 100 * 1024;
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
@@ -100,7 +100,11 @@ export function runTests(repoPath, { timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
     child.stderr?.on("data", collect);
 
     let timedOut = false;
-    const timer = setTimeout(() => { timedOut = true; child.kill(); }, timeoutMs);
+    // child.kill() alone would leave the real test process running on
+    // Windows — see killProcessTree's docstring — which for a test suite
+    // specifically means a build/test process can keep running (and keep
+    // files locked, keep ports bound) indefinitely after this call returns.
+    const timer = setTimeout(() => { timedOut = true; killProcessTree(child); }, timeoutMs);
 
     child.once("error", (err) => {
       clearTimeout(timer);
