@@ -25,6 +25,7 @@
     --ok-strong:#34D399; --ok-strong-ink:#0B3B2C;
     --danger:#DC2626; --danger-strong:#B91C1C;
     --code-key:#8250DF; --code-str:#0A7D5F; --code-num:#B35900; --code-com:#6B7280;
+    --sparkle:#D97757;
     --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Noto Sans Mono",monospace;
     --sans:"Inter","Hiragino Kaku Gothic ProN","Yu Gothic UI","Noto Sans JP",system-ui,sans-serif;
   }
@@ -39,6 +40,7 @@
       --ok-strong:#2FBF83; --ok-strong-ink:#08251C;
       --danger:#F87171; --danger-strong:#DC2626;
       --code-key:#C4A7FF; --code-str:#7EE7B8; --code-num:#FFB878; --code-com:#8A93A6;
+      --sparkle:#E8927A;
     }
   }
   :root[data-theme="dark"]{
@@ -51,6 +53,7 @@
     --ok-strong:#2FBF83; --ok-strong-ink:#08251C;
     --danger:#F87171; --danger-strong:#DC2626;
     --code-key:#C4A7FF; --code-str:#7EE7B8; --code-num:#FFB878; --code-com:#8A93A6;
+    --sparkle:#E8927A;
   }
   *{box-sizing:border-box}
   html,body{height:100%;margin:0}
@@ -67,8 +70,14 @@
   .brand-text{display:flex;flex-direction:column;gap:2px;font-weight:700;font-size:15px;letter-spacing:-.005em;line-height:1.2}
   .brand span{font-size:10.5px;font-weight:600;color:var(--ink-faint);letter-spacing:.1em;text-transform:uppercase}
   .dot{width:9px;height:9px;border-radius:50%;background:var(--brand);box-shadow:0 0 6px color-mix(in srgb, var(--brand) 35%, transparent)}
+  .sidebar-tabs{display:flex;gap:2px;padding:0 12px;margin-bottom:14px;border-bottom:1px solid var(--line)}
+  .sidebar-tab{flex:1;padding:9px 4px;font-size:13px;font-weight:600;color:var(--ink-faint);display:flex;align-items:center;justify-content:center;gap:6px;border-bottom:2px solid transparent;margin-bottom:-1px}
+  .sidebar-tab:hover{color:var(--ink)}
+  .sidebar-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+  .sidebar-tab .icon-sq{width:15px;height:15px}
   .compose{padding:0 12px 12px;display:flex;flex-direction:column;gap:2px}
   .newchat{padding:9px 10px;border-radius:9px;display:flex;gap:11px;align-items:center;font-size:13.5px;font-weight:500;color:var(--ink-dim)}
+  .newchat[hidden]{display:none}
   .newchat .icon-sq{color:var(--ink-faint)}
   .newchat:hover{background:var(--panel);color:var(--ink)}
   .newchat:hover .icon-sq{color:var(--ink)}
@@ -143,18 +152,22 @@
   .msg.assistant{justify-content:flex-start}
   .body{min-width:0}
   .msg.assistant .body{flex:1}
-  .msg.user .body{position:relative;max-width:75%;background:var(--panel);border-radius:18px;padding:10px 16px}
+  .msg.user .body{max-width:75%;background:var(--panel);border-radius:18px;padding:10px 16px}
   .msg.user .who{display:none}
-  .who{font-size:12px;color:var(--ink-faint);margin-bottom:2px;letter-spacing:.04em}
-  .user-edit-btn{position:absolute;top:-10px;right:10px;opacity:0;width:24px;height:24px;border-radius:50%;background:var(--bg-2);border:1px solid var(--line);display:grid;place-items:center;font-size:11px;color:var(--ink-faint);transition:opacity .15s}
-  .msg.user:hover .user-edit-btn{opacity:1}
-  .user-edit-btn:hover{color:var(--accent);border-color:var(--accent)}
+  .who{margin-bottom:6px}
+  .msg.assistant .who{color:var(--sparkle)}
+  .who svg{width:16px;height:16px;display:block}
   .edit-textarea{width:100%;min-height:56px;font-size:14px;line-height:1.5;background:var(--bg-2);border:1px solid var(--line);border-radius:8px;padding:8px;resize:vertical;color:var(--ink)}
   .edit-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}
-  .msg-actions{display:flex;gap:4px;margin-top:8px;opacity:0;transition:opacity .15s}
-  .msg.assistant:hover .msg-actions,.msg-actions:focus-within{opacity:1}
-  .msg-action{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;color:var(--ink-faint);font-size:13px}
+  .msg-actions{display:flex;align-items:center;gap:4px;margin-top:8px;opacity:0;transition:opacity .15s}
+  .msg.assistant:hover .msg-actions,.msg.user:hover .msg-actions,.msg-actions.live,.msg-actions:focus-within{opacity:1}
+  .msg.user .msg-actions{justify-content:flex-end}
+  .msg-action{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;color:var(--ink-faint)}
+  .msg-action svg{width:13px;height:13px}
   .msg-action:hover{background:var(--panel);color:var(--ink)}
+  .msg.user .msg-action:hover{background:var(--bg-2)}
+  .msg-time{font-size:11px;color:var(--ink-faint);margin-left:4px;white-space:nowrap;cursor:default}
+  .cs-meta{margin-top:6px;font-size:11.5px;color:var(--ink-faint);cursor:default}
   .content.collapsed{max-height:480px;overflow:hidden;-webkit-mask-image:linear-gradient(to bottom,#000 75%,transparent 100%);mask-image:linear-gradient(to bottom,#000 75%,transparent 100%)}
   .content-toggle{display:block;margin-top:8px;font-size:12.5px;font-weight:600;color:var(--accent)}
   .content-toggle:hover{text-decoration:underline}
@@ -313,6 +326,16 @@
 <body>
 <aside id="sidebar">
   <div class="brand"><i class="dot"></i><div class="brand-text">Claude Code Chat<span>on aws bedrock</span></div></div>
+  <div class="sidebar-tabs">
+    <button id="tabHome" class="sidebar-tab" title="Amazon Bedrock 上のClaudeと直接チャット">
+      <span class="icon-sq"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5"/></svg></span>
+      ホーム
+    </button>
+    <button id="tabCode" class="sidebar-tab" title="Claude Code（ローカルCLI経由）">
+      <span class="icon-sq"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 6 2 12 8 18"/><polyline points="16 6 22 12 16 18"/></svg></span>
+      Code
+    </button>
+  </div>
   <div class="compose">
     <button class="newchat" id="newchat" title="Amazon Bedrock 上の Claude と直接チャットします">
       <span class="icon-sq"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span>
@@ -528,9 +551,10 @@ $("themeToggle").onclick = () => {
 
 function newThread(){
   const t = { id: crypto.randomUUID(), title: "新しいチャット", messages: [], at: Date.now() };
-  threads.unshift(t); currentId = t.id; showArchived = false; exitSelectMode(); persist(); render(); return t;
+  threads.unshift(t); currentId = t.id; persist(); setSidebarTab("home"); render(); return t;
 }
 function current(){ return threads.find(t => t.id === currentId) || newThread(); }
+let historySyncTimer = null;
 function persist(){
   const light = threads.slice(0, 100).map(t => ({
     ...t,
@@ -541,6 +565,17 @@ function persist(){
   }));
   store.set("chat.threads", light);
   store.set("chat.current", currentId);
+  // Mirror to the server-side backup file too, debounced so rapid-fire
+  // persist() calls don't hammer disk I/O — localStorage above already
+  // covers the "instant" case.
+  clearTimeout(historySyncTimer);
+  historySyncTimer = setTimeout(() => {
+    fetch("/api/history", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ threads: light, current: currentId }),
+    }).catch(() => {});
+  }, 500);
 }
 
 /* ---------------------------- markdown ---------------------------------- */
@@ -602,9 +637,29 @@ function md(src){
 }
 
 /* ----------------------------- rendering -------------------------------- */
-const ICON_MESSAGE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>`;
-const ICON_TERMINAL = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>`;
+const ICON_HOME = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5"/></svg>`;
+const ICON_CODE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 6 2 12 8 18"/><polyline points="16 6 22 12 16 18"/></svg>`;
 const ICON_TRASH = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>`;
+const ICON_COPY = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+const ICON_REFRESH = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><polyline points="23 20 23 14 17 14"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>`;
+const ICON_CHECK = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+const ICON_EDIT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
+const ICON_REWIND = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M3.51 15a9 9 0 1 0 .49-9.36L3 7"/></svg>`;
+const ICON_STOP = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>`;
+const ICON_SPARKLE = `<svg viewBox="0 0 24 24" fill="currentColor"><g><path d="M12 12C12 12 13.2 5 12 1C10.8 5 12 12 12 12Z"/><path d="M12 12C12 12 13.2 5 12 1C10.8 5 12 12 12 12Z" transform="rotate(45 12 12)"/><path d="M12 12C12 12 13.2 5 12 1C10.8 5 12 12 12 12Z" transform="rotate(90 12 12)"/><path d="M12 12C12 12 13.2 5 12 1C10.8 5 12 12 12 12Z" transform="rotate(135 12 12)"/><path d="M12 12C12 12 13.2 5 12 1C10.8 5 12 12 12 12Z" transform="rotate(180 12 12)"/><path d="M12 12C12 12 13.2 5 12 1C10.8 5 12 12 12 12Z" transform="rotate(225 12 12)"/><path d="M12 12C12 12 13.2 5 12 1C10.8 5 12 12 12 12Z" transform="rotate(270 12 12)"/><path d="M12 12C12 12 13.2 5 12 1C10.8 5 12 12 12 12Z" transform="rotate(315 12 12)"/></g></svg>`;
+function fmtRelativeTime(ts){
+  if (!ts) return "";
+  const diffMs = Date.now() - ts;
+  const min = Math.floor(diffMs / 60000);
+  if (min < 1) return "たった今";
+  if (min < 60) return `${min}分前`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}時間前`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `${day}日前`;
+  const d = new Date(ts);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
 
 function dateGroupLabel(ts){
   const startOfDay = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
@@ -623,6 +678,45 @@ let threadSearchQuery = "";
 let showArchived = false;
 let selectMode = false;
 let selectedIds = new Set();
+// "home" = plain Bedrock chat, "code" = Claude Code chat — kept as separate
+// top-level sections (like the official Claude app's own chat/Code split)
+// since the two backends have different requirements (model ID vs local CLI)
+// and mixing them in one list was the direct cause of a support back-and-forth.
+let sidebarTab = store.get("chat.sidebarTab", "home");
+function setSidebarTab(tab){
+  sidebarTab = tab;
+  store.set("chat.sidebarTab", tab);
+  showArchived = false;
+  exitSelectMode();
+  $("tabHome").classList.toggle("active", tab === "home");
+  $("tabCode").classList.toggle("active", tab === "code");
+  $("newchat").hidden = tab !== "home";
+  $("newChatCode").hidden = tab !== "code";
+
+  // The main panel follows the tab too — otherwise switching tabs only
+  // updates the sidebar list while the chat pane keeps showing whatever was
+  // open before, which looks like both tabs share the same conversation.
+  const cur = threads.find(t => t.id === currentId);
+  const curMatchesTab = cur && !cur.archived && (cur.kind === "claude-code") === (tab === "code");
+  if (!curMatchesTab) {
+    const candidates = threads.filter(t => !t.archived && (t.kind === "claude-code") === (tab === "code"));
+    currentId = candidates.reduce((best, t) => (!best || t.at > best.at ? t : best), null)?.id ?? null;
+    persist();
+  }
+  render();
+}
+$("tabHome").onclick = () => setSidebarTab("home");
+$("tabCode").onclick = () => setSidebarTab("code");
+/** Prefers a thread matching the currently active sidebar tab (home/code)
+ *  when picking what to fall back to after deleting/archiving the open
+ *  thread — otherwise the main panel could jump to the other kind while the
+ *  sidebar still shows the tab you were on, which is exactly the kind of
+ *  mismatch this whole tab split exists to avoid. */
+function pickFallbackThread(excludeId){
+  const sameTab = threads.find(x => x.id !== excludeId && !x.archived && (x.kind === "claude-code") === (sidebarTab === "code"));
+  if (sameTab) return sameTab.id;
+  return threads.find(x => x.id !== excludeId && !x.archived)?.id ?? null;
+}
 function threadMatchesSearch(th, q){
   if (th.title.toLowerCase().includes(q)) return true;
   return th.messages.some(m => m.content?.toLowerCase().includes(q));
@@ -633,7 +727,7 @@ function threadRow(th){
   el.className = "thread" + (isCode ? " code" : "") + (th.id === currentId ? " active" : "") + (selectMode ? " selectable" : "");
   el.innerHTML = (selectMode
     ? `<input type="checkbox" class="thread-check"${selectedIds.has(th.id) ? " checked" : ""} />`
-    : `<span class="icon-sq">${isCode ? ICON_TERMINAL : ICON_MESSAGE}</span>`)
+    : `<span class="icon-sq">${isCode ? ICON_CODE : ICON_HOME}</span>`)
     + `<span class="t"></span>`
     + (th.pinned ? `<span class="pin-mark" title="ピン留め済み">📌</span>` : "")
     + (selectMode ? "" : `<button class="thread-menu-btn" title="その他">⋯</button><button class="del" title="削除">${ICON_TRASH}</button>`);
@@ -648,8 +742,9 @@ function threadRow(th){
     el.querySelector(".thread-menu-btn").onclick = (e) => { e.stopPropagation(); openThreadMenu(th.id, e.currentTarget); };
     el.querySelector(".del").onclick = (e) => {
       e.stopPropagation();
+      const wasCurrent = currentId === th.id;
       threads = threads.filter(x => x.id !== th.id);
-      if (currentId === th.id) currentId = threads[0]?.id ?? null;
+      if (wasCurrent) currentId = pickFallbackThread(th.id);
       persist(); if (!threads.length) newThread(); else render();
     };
   }
@@ -660,6 +755,7 @@ function renderThreadList(){
   $("threads").innerHTML = "";
   const q = threadSearchQuery.trim().toLowerCase();
   let pool = showArchived ? threads.filter(t => t.archived) : threads.filter(t => !t.archived);
+  pool = pool.filter(t => (t.kind === "claude-code") === (sidebarTab === "code"));
   if (q) pool = pool.filter(th => threadMatchesSearch(th, q));
 
   if (showArchived) {
@@ -726,8 +822,9 @@ $("bulkCancel").onclick = () => { exitSelectMode(); renderThreadList(); };
 $("bulkDelete").onclick = () => {
   if (!selectedIds.size) return;
   if (!confirm(`${selectedIds.size}件のチャットを削除します。よろしいですか？`)) return;
+  const wasCurrentDeleted = selectedIds.has(currentId);
   threads = threads.filter(t => !selectedIds.has(t.id));
-  if (!threads.some(t => t.id === currentId)) currentId = threads[0]?.id ?? null;
+  if (wasCurrentDeleted) currentId = pickFallbackThread(currentId);
   exitSelectMode();
   persist(); if (!threads.length) newThread(); else render();
 };
@@ -759,7 +856,7 @@ $("threadMenu").addEventListener("click", (e) => {
       th.pinned = !th.pinned;
     } else if (btn.dataset.action === "archive") {
       th.archived = !th.archived;
-      if (th.archived && currentId === th.id) currentId = threads.find(x => !x.archived && x.id !== th.id)?.id ?? null;
+      if (th.archived && currentId === th.id) currentId = pickFallbackThread(th.id);
     } else if (btn.dataset.action === "duplicate") {
       const copy = structuredClone(th);
       copy.id = crypto.randomUUID();
@@ -809,13 +906,10 @@ function render(){
     log.appendChild(el);
     if (m.role === "assistant") {
       const isLast = m === t.messages[t.messages.length - 1];
-      addMessageActions(el, m.content, { canRegenerate: isLast && t.kind !== "claude-code", threadId: t.id });
+      addMessageActions(el, m.content, { canRegenerate: isLast && t.kind !== "claude-code", threadId: t.id, at: m.at });
       if (m.content?.trim() && t.kind !== "claude-code") addCodeButton(el, m.content);
-    } else if (m.role === "user" && t.kind !== "claude-code") {
-      // Editing a user turn only makes sense for plain Bedrock chat — Claude
-      // Code turns are session-based (--resume, real tool calls/file edits
-      // already happened), so rewriting history there has no safe meaning.
-      addUserEditButton(el, t, i);
+    } else if (m.role === "user") {
+      addUserMessageActions(el, t, i);
     }
   });
   if (t.kind === "claude-code" && t.workflow) renderWorkflow(t.id, t.workflow); // redisplay last known state; SSE reconnect (above) corrects it if stale
@@ -827,7 +921,7 @@ function bubble(role, text, thinking, files, tools, meta){
   const chips = (files ?? []).map(f =>
     `<div class="chip"><span>${f.path ? "📁" : f.kind === "image" ? "🖼" : "📄"}</span><b>${esc(f.name)}</b><span>${fmtSize(f.size)}</span></div>`
   ).join("");
-  el.innerHTML = `<div class="body"><div class="who">${role === "user" ? "あなた" : "Claude"}</div>
+  el.innerHTML = `<div class="body"><div class="who">${role === "user" ? "あなた" : ICON_SPARKLE}</div>
     ${chips ? `<div class="files">${chips}</div>` : ""}
     <div class="think-slot"></div><div class="tools-slot"></div><div class="content"></div><div class="meta-slot"></div></div>`;
   setContent(el, text, thinking, false, tools, meta);
@@ -851,6 +945,31 @@ function addCodeButton(el, text){
   btn.onclick = () => openCodeModal(text);
   el.querySelector(".body").appendChild(btn);
 }
+function makeActionBtn(icon, title, onClick){
+  const btn = document.createElement("button");
+  btn.className = "msg-action"; btn.title = title; btn.innerHTML = icon;
+  btn.onclick = onClick;
+  return btn;
+}
+function makeTimeLabel(at){
+  const span = document.createElement("span");
+  span.className = "msg-time";
+  span.textContent = fmtRelativeTime(at);
+  span.title = new Date(at).toLocaleString("ja-JP");
+  return span;
+}
+/** Small "中断" button shown only while a reply is actively streaming — the
+ *  same effect as the send button's stop-toggle, just reachable from the
+ *  message itself. Removed automatically once the turn finishes (see the
+ *  el.querySelector(".msg-actions")?.remove() calls right before each
+ *  addMessageActions()/addUserMessageActions() call at completion). */
+function addInterruptButton(el, onInterrupt){
+  if (el.querySelector(".msg-actions")) return;
+  const bar = document.createElement("div");
+  bar.className = "msg-actions live";
+  bar.appendChild(makeActionBtn(ICON_STOP, "中断", () => { onInterrupt(); bar.remove(); }));
+  el.querySelector(".body").appendChild(bar);
+}
 /** Hover-revealed copy/regenerate actions under a finished assistant reply.
  *  Regenerate is only offered for the thread's own latest reply in plain
  *  Bedrock chat — Claude Code turns are session-based (--resume, real tool
@@ -860,29 +979,50 @@ function addMessageActions(el, text, opts){
   if (el.querySelector(".msg-actions") || !text?.trim()) return;
   const bar = document.createElement("div");
   bar.className = "msg-actions";
-  const copyBtn = document.createElement("button");
-  copyBtn.className = "msg-action"; copyBtn.title = "コピー"; copyBtn.textContent = "📋";
-  copyBtn.onclick = () => {
+  const copyBtn = makeActionBtn(ICON_COPY, "コピー", () => {
     navigator.clipboard.writeText(text);
-    copyBtn.textContent = "✓"; setTimeout(() => copyBtn.textContent = "📋", 1200);
-  };
+    copyBtn.innerHTML = ICON_CHECK; setTimeout(() => copyBtn.innerHTML = ICON_COPY, 1200);
+  });
   bar.appendChild(copyBtn);
-  if (opts?.canRegenerate) {
-    const regenBtn = document.createElement("button");
-    regenBtn.className = "msg-action"; regenBtn.title = "再生成"; regenBtn.textContent = "🔄";
-    regenBtn.onclick = () => regenerateBedrock(opts.threadId);
-    bar.appendChild(regenBtn);
-  }
+  if (opts?.canRegenerate) bar.appendChild(makeActionBtn(ICON_REFRESH, "再生成", () => regenerateBedrock(opts.threadId)));
+  if (opts?.at) bar.appendChild(makeTimeLabel(opts.at));
   el.querySelector(".body").appendChild(bar);
 }
-/** Hover-revealed pencil on a user bubble (plain Bedrock chat only — see
- *  call site). Swaps the bubble into an inline textarea; submitting drops
- *  this message and everything after it, then re-sends from here. */
-function addUserEditButton(el, t, msgIndex){
-  const btn = document.createElement("button");
-  btn.className = "user-edit-btn"; btn.title = "編集して再送信"; btn.textContent = "✏️";
-  btn.onclick = () => startEditMessage(el, t, msgIndex);
-  el.querySelector(".body").appendChild(btn);
+/** Hover-revealed copy/edit/rewind actions under a user bubble. Edit and
+ *  rewind only make sense in plain Bedrock chat (Claude Code turns are
+ *  session-based and can't be safely rewound), so those two are left out
+ *  for claude-code threads — copy and the timestamp are always shown. */
+function addUserMessageActions(el, t, msgIndex){
+  if (el.querySelector(".msg-actions")) return;
+  const m = t.messages[msgIndex];
+  const bar = document.createElement("div");
+  bar.className = "msg-actions";
+  const copyBtn = makeActionBtn(ICON_COPY, "コピー", () => {
+    navigator.clipboard.writeText(m.content);
+    copyBtn.innerHTML = ICON_CHECK; setTimeout(() => copyBtn.innerHTML = ICON_COPY, 1200);
+  });
+  bar.appendChild(copyBtn);
+  if (t.kind !== "claude-code") {
+    bar.appendChild(makeActionBtn(ICON_EDIT, "編集して再送信", () => startEditMessage(el, t, msgIndex)));
+    bar.appendChild(makeActionBtn(ICON_REWIND, "ここまで巻き戻す", () => rewindToMessage(t, msgIndex)));
+  }
+  if (m.at) bar.appendChild(makeTimeLabel(m.at));
+  el.querySelector(".body").appendChild(bar);
+}
+/** Truncates history back to before this message and restores its original
+ *  text into the composer — unlike edit-and-resend, nothing is sent
+ *  automatically, so the user can change files/attachments or decide not to
+ *  send at all. Bedrock chat only, same reasoning as edit/regenerate. */
+function rewindToMessage(t, msgIndex){
+  if (streaming) return;
+  const m = t.messages[msgIndex];
+  t.messages = t.messages.slice(0, msgIndex);
+  persist();
+  render();
+  $("input").value = m.content;
+  $("input").style.height = "auto";
+  $("input").style.height = Math.min($("input").scrollHeight, 240) + "px";
+  $("input").focus();
 }
 function startEditMessage(el, t, msgIndex){
   const m = t.messages[msgIndex];
@@ -910,7 +1050,7 @@ function startEditMessage(el, t, msgIndex){
     const newText = textarea.value.trim();
     if (!newText || streaming) return;
     t.messages = t.messages.slice(0, msgIndex);
-    t.messages.push({ role: "user", content: newText, files: m.files });
+    t.messages.push({ role: "user", content: newText, files: m.files, at: Date.now() });
     t.at = Date.now();
     persist();
     render();
@@ -1109,10 +1249,10 @@ async function send(){
   const text = $("input").value.trim();
   if (!text && !pending.length) return;
   const modelId = $("model").value;
-  if (!modelId) return;
+  if (!modelId) { flash("モデルIDを入力してください（画面上部の欄）"); return; }
 
   const t = current();
-  t.messages.push({ role: "user", content: text, files: pending });
+  t.messages.push({ role: "user", content: text, files: pending, at: Date.now() });
   if (t.messages.length === 1) t.title = (text || pending[0].name).slice(0, 34);
   t.at = Date.now();
   pending = []; renderTray();
@@ -1128,7 +1268,7 @@ async function send(){
  *  reply and re-runs from the same user message). */
 async function runBedrockTurn(t){
   const modelId = $("model").value;
-  if (!modelId) return;
+  if (!modelId) { flash("モデルIDを入力してください（画面上部の欄）"); return; }
 
   const el = appendAssistantPlaceholder();
   log.appendChild(el);
@@ -1137,6 +1277,7 @@ async function runBedrockTurn(t){
   let answer = "", thought = "";
   streaming = new AbortController();
   $("send").classList.add("stop"); $("send").textContent = "■";
+  addInterruptButton(el, () => streaming?.abort());
 
   try {
     const res = await fetch("/api/chat", {
@@ -1188,9 +1329,11 @@ async function runBedrockTurn(t){
     streaming = null;
     $("send").classList.remove("stop"); $("send").textContent = "➤";
     setContent(el, answer, thought, false);
-    addMessageActions(el, answer, { canRegenerate: true, threadId: t.id });
+    el.querySelector(".msg-actions")?.remove(); // drop the live "中断" bar before the real actions
+    const now = Date.now();
+    addMessageActions(el, answer, { canRegenerate: true, threadId: t.id, at: now });
     if (answer.trim()) addCodeButton(el, answer);
-    if (answer || thought) t.messages.push({ role: "assistant", content: answer, thinking: thought });
+    if (answer || thought) t.messages.push({ role: "assistant", content: answer, thinking: thought, at: now });
     persist();
     notifyTurnComplete(t.title, answer);
     $("input").focus();
@@ -1236,6 +1379,9 @@ async function openNewClaudeCodeChat(){
       o.value = repo.path; o.textContent = `${repo.name} (${repo.path})`;
       sel.appendChild(o);
     }
+    const lastRepo = store.get("chat.lastRepo", null);
+    if (lastRepo && repos.some(r => r.path === lastRepo.path)) sel.value = lastRepo.path;
+    $("ccMode").value = store.get("chat.lastMode", "plan");
     sel.disabled = false;
     $("ccNewStart").disabled = false;
   } catch (err) {
@@ -1247,18 +1393,59 @@ async function openNewClaudeCodeChat(){
 function closeNewClaudeCodeChat(){
   $("ccNewModal").hidden = true;
 }
+function createClaudeCodeThread(repoPath, repoLabel, mode){
+  const t = {
+    id: crypto.randomUUID(), title: repoLabel.split(" (")[0], messages: [], at: Date.now(),
+    kind: "claude-code", repoPath, repoLabel, mode, sessionId: null,
+  };
+  threads.unshift(t);
+  store.set("chat.lastRepo", { path: repoPath, label: repoLabel });
+  store.set("chat.lastMode", mode);
+  return t;
+}
 function startClaudeCodeThread(){
   const repoPath = $("ccRepo").value;
   if (!repoPath) return;
   const repoLabel = $("ccRepo").selectedOptions[0]?.textContent ?? repoPath;
   const mode = $("ccMode").value;
-  const t = {
-    id: crypto.randomUUID(), title: repoLabel.split(" (")[0], messages: [], at: Date.now(),
-    kind: "claude-code", repoPath, repoLabel, mode, sessionId: null,
-  };
-  threads.unshift(t); currentId = t.id; showArchived = false; exitSelectMode(); persist(); render();
+  const t = createClaudeCodeThread(repoPath, repoLabel, mode);
+  currentId = t.id; persist(); setSidebarTab("code"); render();
   closeNewClaudeCodeChat();
-  $("input").focus();
+  if ($("input").value.trim()) sendClaudeCode();
+  else $("input").focus();
+}
+
+// "type & hit send" quick-start for the Code tab, mirroring how Home just
+// works with no setup: reuses the last repo/mode if we have one (or the
+// only repo, if there's just one), so a Repository picker only interrupts
+// the flow when it's genuinely ambiguous.
+async function quickStartClaudeCode(){
+  const text = $("input").value.trim();
+  if (!text) return;
+  const lastRepo = store.get("chat.lastRepo", null);
+  let repoPath = null, repoLabel = null;
+  try {
+    const r = await fetch("/api/code/repos");
+    const d = await r.json();
+    const repos = d.repos ?? [];
+    if (!repos.length) {
+      flash("Repositoryが未登録です。⚙の設定で許可フォルダを登録してください");
+      return;
+    }
+    const matched = lastRepo && repos.find(x => x.path === lastRepo.path);
+    if (matched) { repoPath = matched.path; repoLabel = `${matched.name} (${matched.path})`; }
+    else if (repos.length === 1) { repoPath = repos[0].path; repoLabel = `${repos[0].name} (${repos[0].path})`; }
+  } catch {
+    flash("Repository一覧の取得に失敗しました");
+    return;
+  }
+
+  if (!repoPath) { openNewClaudeCodeChat(); return; } // ambiguous — let the user pick, typed text stays put
+
+  const mode = store.get("chat.lastMode", "plan");
+  const t = createClaudeCodeThread(repoPath, repoLabel, mode);
+  currentId = t.id; persist(); setSidebarTab("code"); render();
+  await sendClaudeCode();
 }
 
 // One persistent SSE connection per active thread, reused across turns so a
@@ -1341,6 +1528,7 @@ async function maybeReconnectClaudeCode(t){
   if (current().id === t.id) setCcSendBusy(true);
   const el = appendAssistantPlaceholder();
   if (current().id === t.id) { log.appendChild(el); scroll.scrollTop = scroll.scrollHeight; }
+  addInterruptButton(el, () => cancelClaudeCodeTurn(t));
 
   const conn = ensureCcConnection(t.id, t.sessionId, data.turnStartIndex);
   conn.active = {
@@ -1349,12 +1537,17 @@ async function maybeReconnectClaudeCode(t){
       ccBusy.delete(t.id);
       if (current().id === t.id) setCcSendBusy(false);
       setContent(el, this.answer, this.thought, false, this.tools, this.meta);
-      addMessageActions(el, this.answer);
-      t.messages.push({ role: "assistant", content: this.answer, thinking: this.thought, tools: this.tools, meta: this.meta });
+      el.querySelector(".msg-actions")?.remove();
+      const now = Date.now();
+      addMessageActions(el, this.answer, { at: now });
+      t.messages.push({ role: "assistant", content: this.answer, thinking: this.thought, tools: this.tools, meta: this.meta, at: now });
       persist();
       notifyTurnComplete(t.title, this.answer);
     },
   };
+}
+function cancelClaudeCodeTurn(t){
+  if (t.sessionId) fetch(`/api/code/sessions/${encodeURIComponent(t.sessionId)}/cancel`, { method: "POST" }).catch(() => {});
 }
 
 function setCcSendBusy(busy){
@@ -1372,12 +1565,14 @@ function setCcSendBusy(busy){
 async function attachCcTurn(t, el, resPromise){
   ccBusy.add(t.id);
   if (current().id === t.id) setCcSendBusy(true);
+  addInterruptButton(el, () => cancelClaudeCodeTurn(t));
 
   const fail = (msg) => {
     ccBusy.delete(t.id);
     if (current().id === t.id) setCcSendBusy(false);
     setContent(el, msg, "", false, []);
-    t.messages.push({ role: "assistant", content: msg });
+    el.querySelector(".msg-actions")?.remove();
+    t.messages.push({ role: "assistant", content: msg, at: Date.now() });
     persist();
     if (current().id === t.id) $("input").focus();
   };
@@ -1396,8 +1591,10 @@ async function attachCcTurn(t, el, resPromise){
           ccBusy.delete(t.id);
           if (current().id === t.id) setCcSendBusy(false);
           setContent(el, this.answer, this.thought, false, this.tools, this.meta);
-          addMessageActions(el, this.answer);
-          t.messages.push({ role: "assistant", content: this.answer, thinking: this.thought, tools: this.tools, meta: this.meta });
+          el.querySelector(".msg-actions")?.remove();
+          const now = Date.now();
+          addMessageActions(el, this.answer, { at: now });
+          t.messages.push({ role: "assistant", content: this.answer, thinking: this.thought, tools: this.tools, meta: this.meta, at: now });
           persist();
           notifyTurnComplete(t.title, this.answer);
           if (current().id === t.id) $("input").focus();
@@ -1414,14 +1611,14 @@ async function sendClaudeCode(){
   const t = current();
   if (ccBusy.has(t.id)) {
     // Send button doubles as Stop while this thread is mid-turn.
-    if (t.sessionId) fetch(`/api/code/sessions/${encodeURIComponent(t.sessionId)}/cancel`, { method: "POST" }).catch(() => {});
+    cancelClaudeCodeTurn(t);
     return;
   }
   const text = $("input").value.trim();
   if (!text) return;
   if (pending.length) { flash("Claude Codeモードではファイル添付は使えません"); pending = []; renderTray(); }
 
-  t.messages.push({ role: "user", content: text });
+  t.messages.push({ role: "user", content: text, at: Date.now() });
   if (t.messages.length === 1) t.title = text.slice(0, 34);
   t.at = Date.now();
   $("input").value = ""; $("input").style.height = "auto";
@@ -1457,7 +1654,7 @@ async function startClaudeCodeWorkflow(){
   const text = $("input").value.trim();
   if (!text) return;
 
-  t.messages.push({ role: "user", content: text });
+  t.messages.push({ role: "user", content: text, at: Date.now() });
   t.at = Date.now();
   $("input").value = ""; $("input").style.height = "auto";
   render();
@@ -1485,7 +1682,7 @@ async function approveWorkflowPlan(threadId){
 async function requestWorkflowChanges(threadId, feedback){
   const t = threads.find((x) => x.id === threadId);
   if (!t?.sessionId || ccBusy.has(t.id) || !feedback.trim()) return;
-  t.messages.push({ role: "user", content: feedback });
+  t.messages.push({ role: "user", content: feedback, at: Date.now() });
   t.at = Date.now();
   persist();
   if (current().id === threadId) render();
@@ -1766,8 +1963,8 @@ async function executeCodeRequest(){
     id: crypto.randomUUID(), title: prompt.slice(0, 34), messages: [], at: Date.now(),
     kind: "claude-code", repoPath, repoLabel, mode, sessionId: null,
   };
-  t.messages.push({ role: "user", content: prompt });
-  threads.unshift(t); currentId = t.id; showArchived = false; exitSelectMode(); persist(); render();
+  t.messages.push({ role: "user", content: prompt, at: Date.now() });
+  threads.unshift(t); currentId = t.id; persist(); setSidebarTab("code"); render();
   closeCodeModal();
 
   const el = appendAssistantPlaceholder();
@@ -1811,7 +2008,9 @@ document.addEventListener("keydown", (e) => {
 
 /* ------------------------------- wiring --------------------------------- */
 function submitCurrent(){
-  if (current().kind === "claude-code") { sendClaudeCode(); return; }
+  const t = threads.find(x => x.id === currentId);
+  if (t?.kind === "claude-code") { sendClaudeCode(); return; }
+  if (sidebarTab === "code") { quickStartClaudeCode(); return; }
   send();
 }
 $("send").onclick = submitCurrent;
@@ -1943,6 +2142,26 @@ for (const [id, key] of [["system","chat.system"],["temp","chat.temp"],["maxtok"
 }
 
 (async function init(){
+  // Server-side history backup: browser localStorage stays the fast path,
+  // but corporate PCs periodically get their browser cache/site data wiped
+  // (common when the machine slows down), which would otherwise lose every
+  // conversation. Prefer the server copy if it has anything; otherwise, if
+  // this browser already has local history but the server file doesn't
+  // exist yet, push it up once so future clears are covered too.
+  try {
+    const res = await fetch("/api/history");
+    if (res.ok) {
+      const data = await res.json();
+      if (data.threads?.length) {
+        threads = data.threads;
+        currentId = data.current;
+        store.set("chat.threads", threads);
+        store.set("chat.current", currentId);
+      } else if (threads.length) {
+        persist();
+      }
+    }
+  } catch {}
   const savedRoots = store.get("chat.roots", "");
   if (savedRoots) { $("roots").value = savedRoots; registerRoots(); }
   try {
@@ -1970,6 +2189,7 @@ for (const [id, key] of [["system","chat.system"],["temp","chat.temp"],["maxtok"
     $("model").onchange = () => store.set("chat.model", $("model").value);
     $("ctx").textContent = "モデル一覧の取得に失敗（IDを直接入力してください）";
   }
+  setSidebarTab(sidebarTab);
   if (!threads.length) newThread(); else render();
   $("input").focus();
 })();

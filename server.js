@@ -366,6 +366,45 @@ app.get("/api/config", (_req, res) => {
   });
 });
 
+/**
+ * Chat history backup — a local JSON file, not a database. The browser's
+ * localStorage stays the fast/offline copy the UI actually reads and writes
+ * from turn to turn; this is just a durable server-side mirror so clearing
+ * browser data (common on managed corporate PCs when they get slow) doesn't
+ * wipe out conversation history. 127.0.0.1-only, single-user, so no auth and
+ * no concurrency handling beyond "last write wins".
+ */
+const HISTORY_FILE = path.join(__dirname, "data", "history.json");
+
+app.get("/api/history", (_req, res) => {
+  try {
+    if (!fs.existsSync(HISTORY_FILE)) return res.json({ threads: [], current: null });
+    const raw = fs.readFileSync(HISTORY_FILE, "utf8");
+    const data = JSON.parse(raw);
+    res.json({ threads: Array.isArray(data.threads) ? data.threads : [], current: data.current ?? null });
+  } catch (err) {
+    console.warn("[warn] failed to read history file:", err.message);
+    res.status(500).json({ error: "履歴の読み込みに失敗しました" });
+  }
+});
+
+app.post("/api/history", (req, res) => {
+  const { threads, current } = req.body ?? {};
+  if (!Array.isArray(threads)) {
+    return res.status(400).json({ error: "threads must be an array" });
+  }
+  try {
+    fs.mkdirSync(path.dirname(HISTORY_FILE), { recursive: true });
+    const tmpFile = `${HISTORY_FILE}.tmp`;
+    fs.writeFileSync(tmpFile, JSON.stringify({ threads, current: current ?? null }), "utf8");
+    fs.renameSync(tmpFile, HISTORY_FILE); // atomic swap — a crash mid-write can't corrupt the real file
+    res.json({ ok: true });
+  } catch (err) {
+    console.warn("[warn] failed to write history file:", err.message);
+    res.status(500).json({ error: "履歴の保存に失敗しました" });
+  }
+});
+
 /** Model list, read live from the account so IDs never go stale. */
 app.get("/api/models", async (_req, res) => {
   const models = new Map();
