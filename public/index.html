@@ -87,6 +87,7 @@
   .thread-toolbar-btn:hover{color:var(--ink);border-color:var(--ink-faint)}
   .thread-toolbar-btn.active{color:var(--accent);border-color:var(--accent);background:color-mix(in srgb, var(--accent) 10%, transparent)}
   .bulk-bar{display:flex;align-items:center;gap:8px;padding:8px 14px;border-top:1px solid var(--line);font-size:12.5px;color:var(--ink-dim)}
+  .bulk-bar[hidden]{display:none}
   .bulk-bar button{font-size:12px;padding:4px 10px;border-radius:7px;border:1px solid var(--line)}
   .bulk-bar .bulk-delete{color:var(--danger);border-color:var(--err-line)}
   .bulk-bar .bulk-delete:hover{background:var(--err-bg)}
@@ -98,6 +99,7 @@
   .thread:hover .thread-menu-btn{opacity:1}
   .thread-menu-btn:hover{background:var(--line);color:var(--ink)}
   .thread-menu{position:fixed;z-index:60;min-width:160px;background:var(--bg-2);border:1px solid var(--line);border-radius:10px;padding:5px;box-shadow:0 6px 24px color-mix(in srgb, var(--ink) 18%, transparent);display:flex;flex-direction:column}
+  .thread-menu[hidden]{display:none}
   .thread-menu button{text-align:left;padding:7px 10px;border-radius:7px;font-size:13px;color:var(--ink-dim)}
   .thread-menu button:hover{background:var(--panel);color:var(--ink)}
   .threads{flex:1;overflow-y:auto;padding:2px 10px 14px}
