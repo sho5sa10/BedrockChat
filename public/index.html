@@ -1227,7 +1227,7 @@ function togglePreview(btn){
   const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; font-src data:">`;
   pane.innerHTML = `<div class="preview-bar"><span>プレビュー（サンドボックス内で実行・外部通信は行われません）</span></div>`;
   const iframe = document.createElement("iframe");
-  iframe.sandbox = "allow-scripts";
+  iframe.setAttribute("sandbox", "allow-scripts"); // 属性で直接指定する（allow-same-originは付けない）
   iframe.srcdoc = csp + src;
   pane.appendChild(iframe);
   pane.hidden = false;
