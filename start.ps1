@@ -1,4 +1,4 @@
-﻿# Claude Code Chat on AWS Bedrock launcher (Windows)
+﻿# Claude Desk — Chat & Code on Amazon Bedrock : launcher (Windows)
 # 使い方: PowerShell で  .\start.ps1
 #
 # 初回はいくつか質問されます。回答は start.local.json に保存され、
@@ -16,6 +16,11 @@ param(
 )
 
 Set-Location -Path $PSScriptRoot
+
+Write-Host ""
+Write-Host "  Claude Desk" -ForegroundColor Cyan -NoNewline
+Write-Host "  —  Chat & Code on Amazon Bedrock"
+Write-Host ""
 
 $configPath = Join-Path $PSScriptRoot "start.local.json"
 
@@ -36,7 +41,7 @@ function Ask([string]$Prompt, [string]$Default) {
 $config = Read-SavedConfig
 if (-not $config -or $Reconfigure) {
     Write-Host ""
-    Write-Host "=== 初回セットアップ ===" -ForegroundColor Cyan
+    Write-Host "=== Claude Desk 初回セットアップ ===" -ForegroundColor Cyan
     Write-Host "わからない項目は空欄のままEnterで進めてください。あとで $configPath を直接編集しても、"
     Write-Host ".\start.ps1 -Reconfigure でやり直しても構いません。"
     Write-Host ""
@@ -108,7 +113,8 @@ if (Get-Command aws -ErrorAction SilentlyContinue) {
         $loginParts = $loginCommand -split "\s+"
         & $loginParts[0] @($loginParts[1..($loginParts.Length - 1)]) @profileArgs
         if ($LASTEXITCODE -ne 0) {
-            Write-Host "[Auth] ログインに失敗しました。手動で '$loginCommand $($profileArgs -join ' ')' を実行してください。" -ForegroundColor Red
+            Write-Host "[Auth] ログインに失敗しました。Claude Desk は AWS の認証情報がないと Bedrock を呼び出せません。" -ForegroundColor Red
+            Write-Host "[Auth] 手動で '$loginCommand $($profileArgs -join ' ')' を実行してから、もう一度 .\start.ps1 を実行してください。" -ForegroundColor Red
             Read-Host "Enterキーで終了"
             exit 1
         }
@@ -119,7 +125,7 @@ if (Get-Command aws -ErrorAction SilentlyContinue) {
 }
 
 if (-not (Test-Path "node_modules")) {
-    Write-Host "依存パッケージをインストールします..." -ForegroundColor Cyan
+    Write-Host "Claude Desk の依存パッケージをインストールします..." -ForegroundColor Cyan
     npm install
     if ($LASTEXITCODE -ne 0) {
         Write-Host "npm install に失敗しました。プロキシ設定を確認してください:" -ForegroundColor Red

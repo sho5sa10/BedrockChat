@@ -16,7 +16,7 @@ function makeRequestId(date = new Date()) {
 }
 
 /**
- * CodeAgent is the boundary between BedrockChat (server.js) and however
+ * CodeAgent is the boundary between Claude Desk (server.js) and however
  * Claude Code actually gets launched and reported on. server.js only ever
  * talks to this class: it creates requests, reads status, and subscribes
  * to normalized progress events — it never spawns a process, parses CLI

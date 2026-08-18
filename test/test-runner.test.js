@@ -6,7 +6,7 @@ import path from "node:path";
 
 import { detectTestCommand, runTests } from "../code-agent/test-runner.js";
 
-function tmpDir(prefix = "bedrockchat-testrunner-") {
+function tmpDir(prefix = "claude-desk-testrunner-") {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
 
@@ -77,6 +77,28 @@ describe("test-runner — runTests (real subprocess, no fixtures needed: node it
     assert.equal(result.passed, false);
     assert.equal(result.exitCode, 1);
     assert.match(result.output, /boom/);
+  });
+
+  test("a timeout kills the whole process tree, not just the shell wrapper", async () => {
+    // Regression test for the Windows-specific leak: `npm test` runs as
+    // cmd.exe -> npm.cmd -> node, so signalling only the immediate child
+    // leaves the real test process alive — holding file locks and ports long
+    // after the workflow reported a timeout. The marker file is written 3s in;
+    // if the tree really died at 500ms it can never appear.
+    const dir = tmpDir();
+    fs.writeFileSync(
+      path.join(dir, "slow-test.js"),
+      'const fs = require("node:fs");\nsetTimeout(() => fs.writeFileSync("marker.txt", "survived the kill"), 3000);\n'
+    );
+    fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ scripts: { test: "node slow-test.js" } }));
+
+    const result = await runTests(dir, { timeoutMs: 500 });
+    assert.equal(result.ran, true);
+    assert.equal(result.timedOut, true);
+    assert.equal(result.passed, false);
+
+    await new Promise((r) => setTimeout(r, 4000));
+    assert.equal(fs.existsSync(path.join(dir, "marker.txt")), false);
   });
 
   test("ran:false when the detected command itself is not on PATH", async () => {

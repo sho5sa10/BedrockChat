@@ -9,7 +9,7 @@ import { spawnSync } from "node:child_process";
 import { CodeSessionManager } from "../code-agent/sessions.js";
 import { currentBranch } from "../code-agent/git-adapter.js";
 
-function tmpDir(prefix = "bedrockchat-workflow-") {
+function tmpDir(prefix = "claude-desk-workflow-") {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
 

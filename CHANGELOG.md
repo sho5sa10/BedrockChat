@@ -1,5 +1,39 @@
 # Changelog
 
+## v1.5.0 — 2026-08-19
+
+プロダクト名を **Claude Desk** に変更。あわせて、実態と食い違っていたドキュメントの整理と、git操作まわりの安全性の再点検を行った。機能の追加・削除はない。
+
+### 変更（リネーム）
+- プロダクト名を「Claude Code Chat on AWS Bedrock」から **「Claude Desk」**（サブタイトル: Chat & Code on Amazon Bedrock）に変更。名前が「Claude Code のチャット」と読めてしまい、中心機能である Bedrock 直接チャットが伝わらなかったため
+- 表示名を変更した箇所: README、`<title>`、サイドバーのブランド表示、`start.ps1` の起動バナーと初回セットアップ・認証エラーの文言、サーバー起動時のコンソール出力、`package.json` の `name`（`bedrock-chat` → `claude-desk`）と `description`、`.claude/launch.json`、`docs/mockup.svg`
+- GitHub のリポジトリも `Claude-Code-Chat_on_aws_bedrock` → `Claude-Desk` に移動。旧URLは GitHub のリダイレクトで引き続きアクセスできるため、既にクローン済みの環境はそのまま動く（`git remote set-url` は任意）。v1.4.0 以前のリリース資産のファイル名 (`bedrock-chat-vX.X.X.zip`) は当時のまま
+- `start.local.json` の形式は変更なし（そのまま引き継がれる）
+
+### 追加（安全性）
+- ワークフローの Commit が、実行の直前に「本当にこのワークフローの隔離ブランチがチェックアウトされているか」を検証するようになった。従来は Diff 確認から Commit までの間に別のターミナルで手動でブランチを切り替えていると、`git add -A` が無関係な変更まで巻き込んで別ブランチに commit しうる状態だった（v1.3.1 で「破棄」側に入れた検証と対称になった）
+- Diff 表示が、新規（untracked）ファイルと、Claude Code が自分で `git add` した変更も含むようになった。従来は `git diff` だけを見ていたため、**人間が承認した Diff に出ていないファイルが commit される**（`git add -A` は拾う）ことがありえた。新規ファイルは内容も差分として表示される
+
+### 追加（テスト）
+- 回帰テストを6件追加
+  - Commit が隔離ブランチ以外では拒否され、かつ何もステージしないこと（`test/git-adapter.test.js`）
+  - 「破棄」が隔離ブランチ以外では checkout / clean を一切実行せず、ユーザー自身の変更が生き残ること（同）
+  - 「破棄」の `git clean -fd` が `.gitignore` 対象のファイル（`start.local.json` / `data/`）を消さないこと（同）
+  - Diff が新規ファイル・staged 済みの変更を取りこぼさず、`.gitignore` 対象は含めないこと（`test/git-info.test.js`、新規ファイル）
+  - テスト実行のタイムアウト時に、cmd.exe → npm.cmd → node のプロセスツリー全体が終了すること（`test/test-runner.test.js`）
+  - イベントログが上限に達したあとも `turnStartIndex` が現在のターンの先頭を指し続けること＝ブラウザ再接続時に応答が欠落しないこと（`test/sessions.test.js`）
+
+### 変更（ドキュメント）
+- README を再構成。「これは何か」（claude.ai / Claude Desktop が使えない環境向け）→「2つのモード」→「アーキテクチャ」→「課金の違い」→「セキュリティ」の順に読めるようにした
+- アーキテクチャ図を実態に合わせて差し替え。従来は「ブラウザ → サーバー → Bedrock」の一本道しか書かれておらず、Code タブがローカルの `claude` CLI を起動していることが図から読み取れなかった。ホーム経路（Bedrock直）と Code経路（Claude Code CLI）を分けて図示している
+- 課金の違いを独立した節にした。ホームは AWS の Bedrock 利用料、Code は Claude Code の利用料で、請求先が別であることを明記
+- Roadmap を実態に合わせて更新。すでに実装済みだった「プロンプトテンプレート」「会話履歴の検索」を削除し、未実装のもの（会話の分岐、Artifactsプレビューの拡張など）だけを残した
+- 「うまくいかないとき」に、隔離ブランチ関連の2つの拒否メッセージ（未コミットの変更がある / ブランチが切り替わっている）の対処を追加
+
+### 変更（UI）
+- Code スレッドであることが一目で分かるように、ヘッダーのバッジを `🛠 Claude Code ・ <Repository> ・ <Mode>` にし、「Claude Codeと会話する」ボタンと同じ青で表示するようにした（長いリポジトリパスでヘッダーが崩れないよう省略表示にしている）
+- ホーム / Code のスレッドを開いた直後の空画面、および Claude Codeチャット開始・実装依頼の両モーダルに、どちらの経路でどちらに課金されるかの注記を追加
+
 ## v1.4.0 — 2026-08-17
 
 社内利用のために手元で作っていた機能をまとめて取り込み。

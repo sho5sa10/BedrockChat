@@ -8,7 +8,11 @@ import { captureGitDiffStat, captureFullDiff } from "./git-info.js";
 import { createIsolationBranch, commit as gitCommit, discardIsolationBranch } from "./git-adapter.js";
 import { runTests } from "./test-runner.js";
 
-const MAX_EVENTS_PER_SESSION = 1000; // a chat session accumulates events across many turns
+// A chat session accumulates events across many turns. Exported so the
+// reconnect-after-trim regression test can derive its event counts from the
+// real cap instead of hardcoding a number that would silently stop
+// exercising the trim path if this value ever changed.
+export const MAX_EVENTS_PER_SESSION = 1000;
 
 function makeSessionId(date = new Date()) {
   const y = date.getFullYear();
@@ -60,7 +64,7 @@ function safely(fn) {
  * On top of plain chat, a session can carry one *workflow* at a time — the
  * Plan → Human Approval → Edit → Test → Diff → Human Approval → Commit
  * loop. A workflow is optional and explicit (startPlan()), never implied
- * by an ordinary chat message, per the design principle that BedrockChat
+ * by an ordinary chat message, per the design principle that Claude Desk
  * stays a chat UI first and an "implementation request form" only when
  * the user deliberately asks for that structure:
  *
@@ -293,7 +297,12 @@ export class CodeSessionManager {
     return { ok: true, status: 202, session: { sessionId: record.sessionId, status: record.status, turnStartIndex: record.turnStartIndex } };
   }
 
-  /** The only place a commit happens — always a direct response to this explicit call, never automatic. */
+  /**
+   * The only place a commit happens — always a direct response to this
+   * explicit call, never automatic. wf.branch is passed through so the
+   * commit is refused outright if the repository is no longer on this
+   * workflow's isolation branch (see git-adapter.commit).
+   */
   commitWorkflow(sessionId, message) {
     const record = this.sessions.get(sessionId);
     if (!record) return { ok: false, status: 404, errors: ["session not found"] };
@@ -301,7 +310,7 @@ export class CodeSessionManager {
     if (!wf || wf.status !== "diff_ready") return { ok: false, status: 409, errors: ["no diff is ready to commit"] };
     if (typeof message !== "string" || !message.trim()) return { ok: false, status: 400, errors: ["commit message is required"] };
 
-    const result = gitCommit(record.repoPath, message);
+    const result = gitCommit(record.repoPath, message, wf.branch);
     if (!result.ok) {
       wf.error = result.error;
       this.#emitWorkflowEvent(record);

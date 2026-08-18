@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Claude Code Chat on AWS Bedrock</title>
+<title>Claude Desk</title>
 <script>
 /* Applied before first paint so there's no flash of the wrong theme. */
 (function(){
@@ -135,6 +135,11 @@
   #model{max-width:420px;background:var(--panel)}
   .spacer{flex:1}
   .badge{font-family:var(--mono);font-size:11px;color:var(--ink-faint);white-space:nowrap}
+  /* Code-thread marker: same blue as the "Claude Codeと会話する" button, so a
+     Claude Code thread is recognizable from the header alone. Repo paths get
+     long, so it truncates rather than pushing the context bar and toolbar
+     buttons off the header (the "🛠 Claude Code" prefix is what survives). */
+  #ccInfo{max-width:340px;overflow:hidden;text-overflow:ellipsis;color:var(--blue);padding:3px 9px;border-radius:20px;border:1px solid color-mix(in srgb, var(--blue) 35%, transparent)}
   .ctx-wrap{display:flex;align-items:center;gap:8px;padding:4px 9px;border-radius:20px;background:var(--panel);border:1px solid var(--line)}
   .ctx-wrap[hidden]{display:none}
   .ctx-bar{width:64px;height:7px;border-radius:4px;background:var(--bg);border:1px solid var(--line);overflow:hidden}
@@ -227,6 +232,10 @@
   @keyframes tpulse{0%,80%,100%{opacity:.25;transform:scale(.7)}40%{opacity:1;transform:scale(1)}}
   .empty{text-align:center;color:var(--ink-faint);padding:16vh 0 0}
   .empty h2{color:var(--ink);font-weight:600;font-size:22px;margin:0 0 6px}
+  /* Which backend (and therefore which bill) a thread is on — deliberately
+     legible rather than decorative, since Home and Code cost money in two
+     completely different places. */
+  .route-note{display:inline-block;margin-top:10px;padding:6px 12px;border:1px solid var(--line);border-radius:999px;font-size:11.5px;line-height:1.5;max-width:420px}
 
   /* ---------- composer ---------- */
   footer{border-top:1px solid var(--line);background:var(--bg);padding:14px 20px 18px}
@@ -354,23 +363,23 @@
 </head>
 <body>
 <aside id="sidebar">
-  <div class="brand"><i class="dot"></i><div class="brand-text">Claude Code Chat<span>on aws bedrock</span></div></div>
+  <div class="brand"><i class="dot"></i><div class="brand-text">Claude Desk<span>chat &amp; code on bedrock</span></div></div>
   <div class="sidebar-tabs">
-    <button id="tabHome" class="sidebar-tab" title="Amazon Bedrock 上のClaudeと直接チャット">
+    <button id="tabHome" class="sidebar-tab" title="ホーム: Amazon Bedrock 上の Claude と直接チャット（課金は AWS の Bedrock 利用料）">
       <span class="icon-sq"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5"/></svg></span>
       ホーム
     </button>
-    <button id="tabCode" class="sidebar-tab" title="Claude Code（ローカルCLI経由）">
+    <button id="tabCode" class="sidebar-tab" title="Code: ローカルの claude CLI 経由でRepositoryを調査・実装（課金は Claude Code 側。ホームのBedrock直課金とは別）">
       <span class="icon-sq"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 6 2 12 8 18"/><polyline points="16 6 22 12 16 18"/></svg></span>
       Code
     </button>
   </div>
   <div class="compose">
-    <button class="newchat" id="newchat" title="Amazon Bedrock 上の Claude と直接チャットします">
+    <button class="newchat" id="newchat" title="Amazon Bedrock 上の Claude と直接チャットします（課金: AWS の Bedrock 利用料）">
       <span class="icon-sq"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span>
       新しいチャット
     </button>
-    <button class="newchat code" id="newChatCode" title="Repository について、Claude Code と継続的に会話します">
+    <button class="newchat code" id="newChatCode" title="Repository について、ローカルの claude CLI と継続的に会話します（課金: Claude Code 側。Bedrock直課金とは別）">
       <span class="icon-sq"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></span>
       Claude Codeと会話する
     </button>
@@ -525,6 +534,7 @@
       <label for="codePrompt">Implementation Prompt（編集できます）</label>
       <textarea id="codePrompt" placeholder="Claude Codeへの実装指示…"></textarea>
       <div class="hint2">Claudeの回答をそのまま実行せず、内容を確認・編集してから実装開始を押してください。</div>
+      <div class="hint2">実行はローカルの <code>claude</code> CLI 経由です。課金は Claude Code 側で、ホームの Bedrock 直課金とは別に発生します。</div>
     </div>
     <div class="code-status" id="codeStatus"></div>
     <div class="modal-actions">
@@ -549,6 +559,7 @@
       </select>
     </div>
     <div class="hint2">開始すると、このRepositoryについて自然な会話でClaude Codeに質問できます。</div>
+    <div class="hint2">この会話はローカルの <code>claude</code> CLI 経由です。課金は Claude Code 側で、ホームの Bedrock 直課金とは別に発生します。</div>
     <div class="code-status" id="ccNewStatus"></div>
     <div class="modal-actions">
       <button id="ccNewCancel">キャンセル</button>
@@ -775,6 +786,12 @@ let selectedIds = new Set();
 // top-level sections (like the official Claude app's own chat/Code split)
 // since the two backends have different requirements (model ID vs local CLI)
 // and mixing them in one list was the direct cause of a support back-and-forth.
+//
+// The two routes also bill in completely different places, which is invisible
+// from the chat itself — so every entry point into a thread says so plainly
+// rather than leaving it to the README.
+const ROUTE_NOTE_HOME = "💬 <b>ホーム</b>: Amazon Bedrock を直接呼び出します（課金: AWS の Bedrock 利用料）";
+const ROUTE_NOTE_CODE = "🛠 <b>Code</b>: ローカルの <code>claude</code> CLI 経由です（課金: Claude Code 側。ホームの Bedrock 直課金とは別に発生します）";
 let sidebarTab = store.get("chat.sidebarTab", "home");
 function setSidebarTab(tab){
   sidebarTab = tab;
@@ -977,9 +994,13 @@ function render(){
   const ccInfo = $("ccInfo");
   if (t?.kind === "claude-code") {
     ccInfo.hidden = false;
-    ccInfo.textContent = `${t.repoLabel ?? t.repoPath} ・ ${t.mode === "acceptEdits" ? "Accept edits" : "Plan only"}`;
+    // Leading marker so a Code thread is identifiable from the header alone,
+    // without having to notice which sidebar tab happens to be selected.
+    ccInfo.textContent = `🛠 Claude Code ・ ${t.repoLabel ?? t.repoPath} ・ ${t.mode === "acceptEdits" ? "Accept edits" : "Plan only"}`;
+    ccInfo.title = "この会話はローカルの claude CLI 経由です。課金は Claude Code 側で、ホームの Bedrock 直課金とは別に発生します。";
   } else {
     ccInfo.hidden = true;
+    ccInfo.title = "";
   }
 
   const isClaudeCodeThread = t?.kind === "claude-code";
@@ -990,8 +1011,10 @@ function render(){
   log.innerHTML = "";
   if (!t || !t.messages.length) {
     log.innerHTML = t?.kind === "claude-code"
-      ? `<div class="empty"><h2>何を調べますか？</h2><p>「${esc(t.repoLabel ?? t.repoPath)}」についてClaude Codeに質問できます。</p></div>`
-      : `<div class="empty"><h2>何から始めますか？</h2><p>Amazon Bedrock 上の Claude に直接つながっています。</p></div>`;
+      ? `<div class="empty"><h2>何を調べますか？</h2><p>「${esc(t.repoLabel ?? t.repoPath)}」についてClaude Codeに質問できます。</p>
+         <div class="route-note">${ROUTE_NOTE_CODE}</div></div>`
+      : `<div class="empty"><h2>何から始めますか？</h2><p>Amazon Bedrock 上の Claude に直接つながっています。</p>
+         <div class="route-note">${ROUTE_NOTE_HOME}</div></div>`;
     updateContextBar(t);
     return;
   }

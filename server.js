@@ -230,7 +230,7 @@ app.post("/api/zip/extract", (req, res) => {
 
 /** ------------------------------------------------------------------
  *  Claude Code integration (Code Agent) — Phase 0/1
- *  BedrockChat never launches Claude Code itself; it only asks CodeAgent
+ *  Claude Desk never launches Claude Code itself; it only asks CodeAgent
  *  to do so, and only ever sees CodeAgent's normalized events — never the
  *  CLI's own JSONL output (see code-agent/claude-code.js for why: it
  *  carries far more than should reach the browser). Repository access
@@ -733,7 +733,7 @@ app.post("/api/title", async (req, res) => {
 });
 
 app.listen(PORT, "127.0.0.1", () => {
-  console.log(`\n  Claude Code Chat on AWS Bedrock  →  http://localhost:${PORT}`);
+  console.log(`\n  Claude Desk — Chat & Code on Amazon Bedrock  →  http://localhost:${PORT}`);
   console.log(`  region : ${REGION}`);
   console.log(`  proxy  : ${proxyUrl || "(none)"}`);
   console.log(`  ca     : ${caPath || "(system default)"}\n`);

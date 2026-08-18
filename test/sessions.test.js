@@ -6,7 +6,7 @@ import path from "node:path";
 import { EventEmitter } from "node:events";
 import { fileURLToPath } from "node:url";
 
-import { CodeSessionManager } from "../code-agent/sessions.js";
+import { CodeSessionManager, MAX_EVENTS_PER_SESSION } from "../code-agent/sessions.js";
 import { ClaudeCodeAdapter } from "../code-agent/claude-code.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -20,7 +20,7 @@ function makeInsideRoots(roots) {
   };
 }
 
-function tmpDir(prefix = "bedrockchat-sess-") {
+function tmpDir(prefix = "claude-desk-sess-") {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
 
@@ -244,6 +244,46 @@ describe("CodeSessionManager.subscribe — live events per turn", () => {
     mgr.unsubscribe(session.sessionId, onEvent);
 
     assert.deepEqual(seen, ["started", "text", "completed", "started", "text", "completed"]);
+  });
+});
+
+describe("CodeSessionManager — event log trimming keeps reconnects aligned", () => {
+  test("turnStartIndex still points at the current turn's first event after the log hits its cap", async () => {
+    // Regression test for the "long session loses part of the latest reply on
+    // browser refresh" bug: a reconnecting client replays record.events and
+    // skips exactly turnStartIndex of them (see GET .../events). Once the log
+    // is full, every push shifts the front of the array — so turnStartIndex
+    // has to shift with it, or the client skips *into* the live turn and
+    // silently drops the beginning of the answer it is waiting for.
+    const allowed = tmpDir();
+    const firstTurnEvents = [
+      { type: "started", sessionId: "s1" },
+      ...Array.from({ length: MAX_EVENTS_PER_SESSION - 2 }, (_, i) => ({ type: "text", text: `chatter ${i}` })),
+      { type: "completed", summary: "long turn done" },
+    ];
+    const secondTurnEvents = [
+      { type: "started", sessionId: "s1" },
+      { type: "text", text: "the reply the user is actually waiting for" },
+      { type: "completed", summary: "second turn done" },
+    ];
+    const adapter = new RecordingStubAdapter((callIndex) => (callIndex === 0 ? firstTurnEvents : secondTurnEvents), 0);
+    const mgr = new CodeSessionManager({ insideRoots: makeInsideRoots([allowed]), adapter });
+
+    const { session } = mgr.createSession({ repoPath: allowed, prompt: "first", mode: "plan" }, [allowed]);
+    await waitFor(() => mgr.getSession(session.sessionId).status === "ready", { timeoutMs: 30_000 });
+    const record = mgr.getSession(session.sessionId);
+    assert.equal(record.events.length, MAX_EVENTS_PER_SESSION); // full, but not yet trimmed
+
+    mgr.sendMessage(session.sessionId, "second");
+    await waitFor(() => mgr.getSession(session.sessionId).status === "ready" && adapter.calls.length === 2);
+
+    assert.equal(record.events.length, MAX_EVENTS_PER_SESSION); // capped: three oldest events were dropped
+    const replayed = record.events.slice(record.turnStartIndex);
+    assert.deepEqual(
+      replayed.map((e) => e.type),
+      ["started", "text", "completed"]
+    );
+    assert.match(replayed[1].text, /actually waiting for/);
   });
 });
 

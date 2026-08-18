@@ -52,10 +52,32 @@ export function createIsolationBranch(repoPath, sessionId) {
   return { ok: false, error: `could not create or switch to branch ${branch}` };
 }
 
-/** git add -A && git commit -m <message>. Rejects an empty message; reports cleanly if there's nothing to commit. */
-export function commit(repoPath, message) {
+/**
+ * git add -A && git commit -m <message>. Rejects an empty message; reports
+ * cleanly if there's nothing to commit.
+ *
+ * `expectedBranch` is the isolation branch the workflow believes it is on,
+ * and is verified before anything is staged — the mirror image of
+ * discardIsolationBranch's own check, and for the same reason: a workflow
+ * can sit at diff_ready for a long time, during which someone could switch
+ * branches by hand in another terminal. Without this, `git add -A` would
+ * sweep up whatever is in the tree at that point and commit it onto an
+ * unrelated branch, under a message describing changes the human reviewed
+ * somewhere else entirely.
+ */
+export function commit(repoPath, message, expectedBranch) {
   if (!isGitRepo(repoPath)) return { ok: false, error: "not a git repository" };
   if (typeof message !== "string" || !message.trim()) return { ok: false, error: "commit message is required" };
+
+  if (expectedBranch) {
+    const cur = currentBranch(repoPath);
+    if (cur !== expectedBranch) {
+      return {
+        ok: false,
+        error: `isolation branch "${expectedBranch}" is not currently checked out (repository is on "${cur}") — refusing to commit changes that may not belong to this workflow`,
+      };
+    }
+  }
 
   if (runGit(["add", "-A"], repoPath) === null) {
     return { ok: false, error: "git add failed" };

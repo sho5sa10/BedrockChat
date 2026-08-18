@@ -5,7 +5,7 @@
   <rect x="0" y="0" width="190" height="500" fill="#111F31"/>
   <line x1="190" y1="0" x2="190" y2="500" stroke="#22405F" stroke-width="1"/>
   <circle cx="24" cy="30" r="4.5" fill="#06B6D4"/>
-  <text x="36" y="34" fill="#E8EFF6" font-size="14" font-weight="600">Bedrock Chat</text>
+  <text x="36" y="34" fill="#E8EFF6" font-size="14" font-weight="600">Claude Desk</text>
 
   <rect x="14" y="52" width="162" height="30" rx="8" fill="none" stroke="#22405F"/>
   <text x="28" y="71" fill="#9DB3C9" font-size="12">＋ 新しいチャット</text>

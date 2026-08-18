@@ -1,9 +1,9 @@
 {
-  "name": "bedrock-chat",
-  "version": "1.4.0",
+  "name": "claude-desk",
+  "version": "1.5.0",
   "private": true,
   "type": "module",
-  "description": "Local chat UI for Claude on Amazon Bedrock",
+  "description": "Claude Desk — local Claude chat & Claude Code companion on Amazon Bedrock",
   "scripts": {
     "start": "node server.js",
     "test": "node --test"

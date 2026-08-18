@@ -26,7 +26,7 @@ function makeInsideRoots(roots) {
   };
 }
 
-function tmpDir(prefix = "bedrockchat-test-") {
+function tmpDir(prefix = "claude-desk-test-") {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
 
@@ -107,9 +107,9 @@ describe("CodeAgent.listRepos", () => {
   });
   test("maps multiple roots to {path, name}", () => {
     const agent = new CodeAgent({ insideRoots: makeInsideRoots([]) });
-    const roots = ["C:\\work\\BedrockChat", "C:\\work\\terraform-genesys_cloud"];
+    const roots = ["C:\\work\\claude-desk", "C:\\work\\terraform-genesys_cloud"];
     assert.deepEqual(agent.listRepos(roots), [
-      { path: "C:\\work\\BedrockChat", name: "BedrockChat" },
+      { path: "C:\\work\\claude-desk", name: "claude-desk" },
       { path: "C:\\work\\terraform-genesys_cloud", name: "terraform-genesys_cloud" },
     ]);
   });

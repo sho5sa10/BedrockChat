@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 
 import { currentBranch, isClean, createIsolationBranch, commit, discardIsolationBranch } from "../code-agent/git-adapter.js";
 
-function tmpDir(prefix = "bedrockchat-gitadapter-") {
+function tmpDir(prefix = "claude-desk-gitadapter-") {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
 
@@ -98,6 +98,36 @@ describe("git-adapter — commit", () => {
     assert.equal(result.ok, false);
     assert.match(result.error, /nothing to commit/);
   });
+
+  test("commits when the expected isolation branch is still checked out", () => {
+    const dir = makeRepo();
+    const created = createIsolationBranch(dir, "cs_commit_ok");
+    fs.writeFileSync(path.join(dir, "a.txt"), "one\nedited by claude\n");
+
+    const result = commit(dir, "edit a.txt", created.branch);
+    assert.equal(result.ok, true);
+    assert.match(git(["log", "-1", "--pretty=%s"], dir), /edit a\.txt/);
+  });
+
+  test("refuses to commit (and stages nothing) once the repo has been switched off the isolation branch by hand", () => {
+    const dir = makeRepo();
+    const base = currentBranch(dir);
+    const created = createIsolationBranch(dir, "cs_commit_guard");
+    git(["checkout", "-q", base], dir); // someone switched branches in another terminal
+
+    // Work that has nothing to do with this workflow, sitting in the tree.
+    fs.writeFileSync(path.join(dir, "unrelated.txt"), "my own work in progress\n");
+
+    const result = commit(dir, "implement the plan", created.branch);
+    assert.equal(result.ok, false);
+    assert.match(result.error, /not currently checked out/);
+    assert.match(result.error, /refusing to commit/);
+
+    // Nothing was staged or committed, and the unrelated file is untouched.
+    assert.equal(git(["log", "-1", "--pretty=%s"], dir).trim(), "init");
+    assert.match(git(["status", "--porcelain"], dir), /\?\? unrelated\.txt/);
+    assert.equal(currentBranch(dir), base);
+  });
 });
 
 describe("git-adapter — discardIsolationBranch", () => {
@@ -117,5 +147,44 @@ describe("git-adapter — discardIsolationBranch", () => {
 
     const branches = git(["branch"], dir);
     assert.doesNotMatch(branches, /ai\/cs_test_3/); // branch deleted
+  });
+
+  test("refuses to discard — running no checkout/clean at all — once the repo has been switched off the isolation branch by hand", () => {
+    const dir = makeRepo();
+    const base = currentBranch(dir);
+    const created = createIsolationBranch(dir, "cs_test_4");
+    git(["checkout", "-q", base], dir); // someone switched branches in another terminal
+
+    // Changes that belong to the user, not to this workflow. A blind
+    // `git checkout -- . && git clean -fd` would destroy both of these.
+    fs.writeFileSync(path.join(dir, "a.txt"), "one\nmy own uncommitted edit\n");
+    fs.writeFileSync(path.join(dir, "my-scratch.txt"), "my own untracked file\n");
+
+    const result = discardIsolationBranch(dir, created.branch, created.baseBranch);
+    assert.equal(result.ok, false);
+    assert.match(result.error, /not currently checked out/);
+
+    assert.match(fs.readFileSync(path.join(dir, "a.txt"), "utf8"), /my own uncommitted edit/); // survived
+    assert.equal(fs.existsSync(path.join(dir, "my-scratch.txt")), true); // survived
+    assert.match(git(["branch"], dir), /ai\/cs_test_4/); // branch left alone too
+  });
+
+  test("leaves gitignored files alone: `git clean -fd` (no -x) must not wipe local config / build output", () => {
+    const dir = makeRepo();
+    fs.writeFileSync(path.join(dir, ".gitignore"), "start.local.json\ndata/\n");
+    git(["add", "-A"], dir);
+    git(["commit", "-q", "-m", "add gitignore"], dir);
+
+    const created = createIsolationBranch(dir, "cs_test_5");
+    fs.writeFileSync(path.join(dir, "start.local.json"), '{"PORT":"3210"}\n'); // ignored: the user's own machine config
+    fs.mkdirSync(path.join(dir, "data"));
+    fs.writeFileSync(path.join(dir, "data", "history.json"), "{}\n"); // ignored: chat history backup
+    fs.writeFileSync(path.join(dir, "claude-made-this.txt"), "workflow output\n"); // not ignored
+
+    const result = discardIsolationBranch(dir, created.branch, created.baseBranch);
+    assert.equal(result.ok, true);
+    assert.equal(fs.existsSync(path.join(dir, "start.local.json")), true);
+    assert.equal(fs.existsSync(path.join(dir, "data", "history.json")), true);
+    assert.equal(fs.existsSync(path.join(dir, "claude-made-this.txt")), false);
   });
 });
