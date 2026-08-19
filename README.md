@@ -7,7 +7,8 @@
 ![Amazon Bedrock](https://img.shields.io/badge/Amazon%20Bedrock-Claude-orange.svg)
 [![Latest Release](https://img.shields.io/github/v/release/sho5sa10/Claude-Desk)](https://github.com/sho5sa10/Claude-Desk/releases/latest)
 
-> No Docker. No CDK. No CloudFormation. Just run and chat.
+> No Docker. No CDK. No CloudFormation.
+> Just run and chat.
 > Docker も CDK も CloudFormation も不要。実行するだけで使えます。
 
 ## これは何か
@@ -18,7 +19,8 @@ Windows PC 上で Node.js のサーバーを立ち上げ、ブラウザから 2 
 - **Claude とのチャット** … Amazon Bedrock を直接呼び出します
 - **Claude Code との連携** … 手元にインストール済みの `claude` CLI を呼び出して、Repository を調査・実装させます
 
-会話履歴・添付ファイル・設定はすべて同じ PC 内で管理し、外部の SaaS には一切通信しません。Claude Code で使っているのと同じ AWS 認証情報・プロキシ・CA証明書設定がそのまま使えます。
+会話履歴・添付ファイル・設定はすべて同じ PC 内で管理し、外部の SaaS には一切通信しません。
+Claude Code で使っているのと同じ AWS 認証情報・プロキシ・CA証明書設定がそのまま使えます。
 
 **こんな方におすすめ**
 
@@ -27,7 +29,9 @@ Windows PC 上で Node.js のサーバーを立ち上げ、ブラウザから 2 
 - 既存の AWS 認証情報（Claude Code などで使っているもの）をそのまま使いたい
 - 企業のプロキシ / SSLインスペクション環境で利用したい
 
-> **旧名について**: v1.5.0 で "Claude Code Chat on AWS Bedrock" から **Claude Desk** に改名しました。リポジトリも `Claude-Code-Chat_on_aws_bedrock` から `Claude-Desk` に移動しています（旧URLは GitHub のリダイレクトで引き続きアクセスできます）。v1.4.0 以前のリリース資産のファイル名 (`bedrock-chat-vX.X.X.zip`) は当時のまま残っています。
+> **旧名について**: v1.5.0 で "Claude Code Chat on AWS Bedrock" から **Claude Desk** に改名しました。
+> リポジトリも `Claude-Code-Chat_on_aws_bedrock` から `Claude-Desk` に移動しています（旧URLは GitHub のリダイレクトで引き続きアクセスできます）。
+> v1.4.0 以前のリリース資産のファイル名 (`bedrock-chat-vX.X.X.zip`) は当時のまま残っています。
 
 ## 2つのモード
 
