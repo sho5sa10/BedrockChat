@@ -2,3 +2,9 @@ node_modules/
 *.log
 /data/
 /start.local.json
+
+# 各自のPCにだけ置くローカルファイル。CLAUDE.md が「Git管理外」と書いている
+# ものを実際に管理外にしておく（`git add -A` での誤コミットと、リリースzipへの
+# 混入を防ぐため）
+/Launch-ClaudeCodeBedrock-GUI.ps1
+/claude_ai_feature_list.xlsx

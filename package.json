@@ -6,7 +6,7 @@
   "description": "Claude Desk — local Claude chat & Claude Code companion on Amazon Bedrock",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test"
+    "test": "node --test --test-concurrency=1"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock": "^3.750.0",

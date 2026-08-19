@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-**Claude Desk**（サブタイトル: Chat & Code on Amazon Bedrock）。claude.ai / Claude Desktop が使えない環境向けのローカルClaude環境で、Node.js/Expressサーバー + 単一HTMLのフロントエンドのみで構成され、Docker/CDK/CloudFormationは使わない。社内PCから、Claude Codeと同じAWS認証情報・プロキシ・CA証明書設定で動かすことを前提にしている。
+**Claude Desk**（サブタイトル: Chat & Code on Amazon Bedrock）。claude.ai / Claude Desktop が使えない環境向けのローカルClaude環境で、Node.js/Expressサーバー + ビルドステップなしの静的フロントエンド（`public/` の3ファイル）のみで構成され、Docker/CDK/CloudFormationは使わない。社内PCから、Claude Codeと同じAWS認証情報・プロキシ・CA証明書設定で動かすことを前提にしている。
 
 経路は2つあり、**呼び出し先も課金先も別**（README の「2つのモード」「課金の違い」を参照）:
 
@@ -21,7 +21,9 @@ npm start         # node server.js を起動（既定ポート3210）
 npm test          # node --test（code-agent/ のユニット・ワークフローテスト）
 ```
 
-リント・ビルドの仕組みはない（単一HTML + server.js + code-agent/ で、ビルドステップ不要）。テストは `test/` に `node --test` ベースで存在し、`code-agent/` 側（Claude Code連携・git操作・ワークフロー）のみを対象にする。`server.js` と `public/index.html` にはテストがない（ブラウザ側のガード——例えば `quickStartInFlight` による二重セッション作成の防止——は、DOMテストの仕組みがないため回帰テストで担保できていない。ここを触るときは手で確認すること）。テストは実際に一時gitリポジトリを作って `npm test` を走らせるため遅く、このリポジトリがOneDrive上（Z:）にあると `waitFor: condition not met before timeout` で偶発的に落ちることがある（特に `test/workflow.test.js` の diff_ready 待ち）。原因はテストファイルの並列実行による負荷なので、`node --test --test-concurrency=1` で走らせれば安定して通る。落ちたときはまずこれで再実行して切り分けること。
+リント・ビルドの仕組みはない（`public/` の静的3ファイル + server.js + code-agent/ で、ビルドステップ不要）。テストは `test/` に `node --test` ベースで存在し、`code-agent/` 側（Claude Code連携・git操作・ワークフロー）のみを対象にする。`server.js` と `public/`（`index.html` / `app.js` / `styles.css`）にはテストがない（ブラウザ側のガード——例えば `quickStartInFlight` による二重セッション作成の防止——は、DOMテストの仕組みがないため回帰テストで担保できていない。ここを触るときは手で確認すること）。
+
+テストは実際に一時gitリポジトリを作って `npm test` を走らせるため遅い。**`npm test` は `--test-concurrency=1` を付けている**——並列実行するとこのリポジトリがOneDrive上（Z:）にある環境で `waitFor: condition not met before timeout` が偶発的に出る（特に `test/workflow.test.js` の diff_ready 待ち）。直列だと73秒→119秒になるが、速さより決定性を優先している。このアプリの実装ワークフロー自身が対象リポジトリで `npm test` を実行するので、テストが不定期に落ちると「実装は正しいのにテスト失敗と報告される」ことになるため。このフラグを外さないこと。
 
 起動は Windows なら `start.ps1`（`.\start.ps1`。PowerShellスクリプトなので `python .\start.ps1` のように別のインタプリタで実行すると構文エラーになる）、macOS/Linux なら `start.sh`（`./start.sh`。初回は `chmod +x start.sh` が必要な場合がある）を使う。両者はロジックを揃えてあるので、どちらか一方だけ直して他方を放置しないこと。初回起動時にリージョン・プロファイル・プロキシ・CA証明書・ポートを対話で聞き、`start.local.json`（Git管理外、JSON形式でOS間共通）に保存して次回以降はそれを読む。設定をやり直すときは `.\start.ps1 -Reconfigure` / `./start.sh --reconfigure`。この方式にしたのは、環境固有の値（社内プロキシURLや個人のホームディレクトリのパス）を公開リポジトリのスクリプトに書かないため。`start.sh` はJSONの読み書きに `jq` ではなく `node` を使っている（このアプリの必須依存なので新たな依存を増やさずに済む）。以下は対話では聞かない任意項目で、`start.local.json` に直接書く:
 
@@ -34,7 +36,7 @@ npm test          # node --test（code-agent/ のユニット・ワークフロ�
 
 サーバープロセスを長時間起動したままにすると、SDKが起動時にキャッシュした認証情報が古くなり、シェル上で再ログインしても反映されないことがある。チャットが無反応になったら、まず `start.ps1` を再実行してサーバー自体を再起動するのが最初の切り分け手順。
 
-`Launch-ClaudeCodeBedrock-GUI.ps1`（Git管理外のローカルファイル）はClaude Code用の別ランチャーで、起動対象は VSCode / Claude Code の2択。Azure VM を検出すると社内Proxy、それ以外（物理PC）は Zscaler 直結として環境変数を設定する。Claude Desk自体は起動しないので、このアプリの起動経路は `start.ps1` だけ。
+`Launch-ClaudeCodeBedrock-GUI.ps1`（Git管理外のローカルファイル）はClaude Code用の別ランチャーで、起動対象は VSCode / Claude Code の2択。Azure VM を検出すると社内Proxy、それ以外（物理PC）は Zscaler 直結として環境変数を設定する。Claude Desk自体は起動しないので、このアプリの起動経路は `start.ps1` / `start.sh` だけ。
 
 ## Architecture
 
@@ -62,7 +64,9 @@ npm test          # node --test（code-agent/ のユニット・ワークフロ�
 - **Diffの網羅性**（`code-agent/git-info.js`）: 人間が承認する Diff は「Commitボタンが実際に commit する内容」と一致していなければならない。`git diff` は untracked ファイルもstaged済みの変更も見えないので、`git diff HEAD` + `status --porcelain -z -uall` の untracked 分（新規ファイルは `git diff --no-index /dev/null <file>` で内容も）を合成している（`-z` は日本語ファイル名が8進エスケープで返るのを避けるため、`-uall` は新規ディレクトリが `dir/` 1件にまとめられるのを避けるため）。`.gitignore` 対象は `git add -A` も拾わないので除外する。`test/git-info.test.js` で担保
 - **履歴バックアップ**: `/api/history` の GET/POST で `data/history.json` を読み書きする。127.0.0.1のみ・単一ユーザー前提なので認証はなく、競合制御も「後書き優先」だけ。
 
-### public/index.html の要点
+### public/（index.html / app.js / styles.css）の要点
+
+以下のJSに関する記述は `public/app.js`、CSSに関する記述は `public/styles.css` を指す（v1.6.1 で `index.html` から切り出した）。
 
 - 状態はすべて `threads`（配列）に集約し、`localStorage` の `chat.threads`/`chat.current`（＋サーバーミラー）に永続化する。スレッドは `{id, title, messages, at, pinned, archived}` に加え、Claude Codeスレッドでは `kind:"claude-code"`, `repoPath`, `repoLabel`, `mode`, `sessionId`, `workflow` を持つ。サイドバーは Home（Bedrockチャット）と Code（Claude Codeスレッド）にタブ分割されている（`sidebarTab`）。
 - Bedrockへの送信は `runBedrockTurn()` に集約されている。新規送信 (`send`)・再生成 (`regenerateBedrock`)・編集後の再送信 (`startEditMessage`) はいずれもここを経由する。Claude Code側は別系統（`sendClaudeCode` / `attachCcTurn` / SSE再接続の `ensureCcConnection`）。**メッセージ配列は分岐を持たない単純な配列**なので、再生成や編集・巻き戻し (`rewindToMessage`) は「そのメッセージ以降を切り捨てて再送信」という設計（ChatGPT初期版と同様）。会話の分岐（同じ地点から複数の応答を保持して切り替え表示）は未実装で、木構造への変更が必要になる。
