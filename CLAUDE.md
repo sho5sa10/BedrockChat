@@ -29,10 +29,13 @@ npm test          # node --test（code-agent/ のユニット・ワークフロ�
 
 - `NODE_EXTRA_CA_CERTS` — Node と AWS CLI で別の証明書を使う環境向け（未指定なら `AWS_CA_BUNDLE` と同じ値）
 - `LOGIN_COMMAND` — 認証切れ時に実行するログインコマンド（未指定なら `aws sso login`）
+- `ALLOW_CROSS_REGION_INFERENCE` — `"1"` で東京リージョンのリージョンロックを解除し、`global.*`/`apac.*`/`us.*` の推論プロファイルも選べるようにする。既定は解除しない。詳細と判断材料は下の「リージョンロック」を参照
 
 `start.ps1` はサーバー起動前に以下を自動で行う:
 - ポート(既定3210)を掴んでいる古い`node.exe`プロセスを検出して終了させる（PowerShellウィンドウを×で閉じるとnode.exeが孤立して残ることがあるため）
 - `aws sts get-caller-identity --profile <プロファイル>` でAWS認証状態を確認し、失効していれば `LOGIN_COMMAND`（既定 `aws sso login`）で再ログインを試行する（サーバー自体は起動できてもBedrock呼び出し時に `CredentialsProviderError` で応答が返らず「反応なし」に見える問題への対策）
+
+**ブラウザは、サーバーが listen を始めてから開く**（v1.6.3 で修正）。以前は `node server.js` の前にブラウザを開いていたため、初回表示がエラーページになることがあった。起動ログは正常に出るので、サーバーが落ちているように見えて紛らわしい。`node server.js` は前景に置いたまま、127.0.0.1:PORT へ繋がるまで待つ役だけをバックグラウンドに逃がしている（`start.ps1` は `Start-Job` + `TcpClient`、`start.sh` は `exec` の前にバックグラウンド化したサブシェル + `node` のポーリング。`nc`/`curl` の有無に依存させないため node を使う）。**node をバックグラウンドに回さないこと**——コンソールとの親子関係が変わり、上のポート掃除で対処している「×で閉じると node.exe が孤立する」挙動に影響する。30秒待って listen しなければブラウザは開かない（開いてもエラーページになるだけで、原因はコンソールに出ている）。
 
 サーバープロセスを長時間起動したままにすると、SDKが起動時にキャッシュした認証情報が古くなり、シェル上で再ログインしても反映されないことがある。チャットが無反応になったら、まず `start.ps1` を再実行してサーバー自体を再起動するのが最初の切り分け手順。
 
@@ -51,7 +54,11 @@ npm test          # node --test（code-agent/ のユニット・ワークフロ�
 
 ### server.js の要点
 
-- **リージョンロック**: `JAPAN_ONLY = REGION === "ap-northeast-1"` の場合、`isJapanOnlyModel()` が `jp.anthropic.*` とプレフィックスなしの `anthropic.*`（基礎モデル）のみを許可する。`global.*`/`apac.*`/`us.*` などのクロスリージョン推論プロファイルは、`/api/models` の一覧・`/api/chat` の実行・`/api/title` のいずれからも拒否される（`/api/chat` は403を返す）。これはAWSのガードレール通知（東京リージョン以外へのルーティング検知）を受けて追加した制約なので、緩めるときは意図を確認すること。
+- **リージョンロック**: `JAPAN_ONLY = REGION === "ap-northeast-1" && !ALLOW_CROSS_REGION` の場合、`isJapanOnlyModel()` が `jp.anthropic.*` とプレフィックスなしの `anthropic.*`（基礎モデル）のみを許可する。`global.*`/`apac.*`/`us.*` などのクロスリージョン推論プロファイルは、`/api/models` の一覧・`/api/chat` の実行・`/api/title` のいずれからも拒否される（`/api/chat` は403を返す）。これはAWSのガードレール通知（東京リージョン以外へのルーティング検知）を受けて追加した制約なので、**既定を変えるときは意図を確認すること**。
+  - **`ALLOW_CROSS_REGION_INFERENCE=1` で解除できる**（v1.6.3 追加。`start.local.json` に書く任意項目で、対話では聞かない）。既定は解除しない——このアプリは同僚にも配るので、データ所在地の要件がある環境の保護を黙って外すことになる。解除は各環境が明示的に選ぶ形にしている。
+  - 解除が必要になる理由: 最新モデル（Opus 5 / Sonnet 5 / Fable 5）は東京では `global.*` としてのみ提供される。プレフィックスなしの `anthropic.claude-opus-5` は `list-foundation-models` には出るが `inferenceTypesSupported` が `INFERENCE_PROFILE` のみで `ON_DEMAND` を含まないため直接呼べない（`/api/models` の line ~566 がそれを弾いているのは正しい。通すと選べるのに実行時エラーになるモデルが並ぶ）。東京で `jp.*` が存在するのは haiku-4-5 / sonnet-4-5 / sonnet-4-6 / opus-4-7 / opus-4-8 のみ。つまりロックを掛けたままでは、`jp.*` が追随するまで新しいモデルを使えない。
+  - 解除が黙って効かないように、サイドバー下部の表示を「東京限定」→「東京外へルーティング可」に切り替え（`/api/config` の `crossRegionAllowed`）、起動時のコンソールにも1行出す。逆にロックが有効なときは、最新モデルが一覧に無い理由と解除方法を起動時に案内する（以前は黙って消えるだけで、モデル非対応と誤解されうる状態だった）。
+  - 社内ガイド（`SWF AWSモデル 環境構築ガイド`）との関係: ガイドは `AWS_REGION=ap-northeast-1` を必須としつつ、推奨モデルは `apac.anthropic.claude-sonnet-4-6`（＝APAC横断で、東京限定ではない）と書いている。越境を禁止する明文はない。ただしこの推奨プロファイル自体が実アカウントには存在せず（`apac.*` は Claude 3 系と Sonnet 4 止まり）、ガイドの記述は実態から遅れている。判断のよりどころにする前に現物を `aws bedrock list-inference-profiles --region ap-northeast-1` で確認すること。
 - **`/api/chat`**: Bedrock `ConverseStreamCommand` の結果をSSE (`data: {...}\n\n`) でクライアントにリレーする。イベント種別は `text`/`thinking`/`usage`/`stop`/`error`/`done`。クライアント切断の検知は `res.on("close", ...)` を使うこと（`req.on("close", ...)` はリクエスト本文の読み取り完了時に発火してしまい、ストリーミング中に誤って `AbortController` を中断させるバグの原因になった実績があるため、絶対に `req` 側では張らない）。
 - **`/api/title`**: 会話の最初の一往復から短いタイトルを`ConverseCommand`（非ストリーミング）で生成する。リージョンロック対象外モデルの場合は黙って `{title: null}` を返す。
 - **ファイル参照**: `/api/roots` で登録したフォルダのみ `/api/files` で列挙・添付可能。`insideRoots()` で絶対パス比較しており、登録フォルダ外への読み取りは常に拒否する。

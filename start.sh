@@ -11,6 +11,12 @@
 # 対話で聞かれない任意項目:
 #   "LOGIN_COMMAND": "aws login"   … 認証切れ時に実行するログインコマンド
 #                                     （未指定なら "aws sso login"）
+#   "ALLOW_CROSS_REGION_INFERENCE": "1"
+#          … 東京リージョンのリージョンロックを解除し、global./apac./us. の
+#            推論プロファイルも選べるようにする。最新モデルは東京では
+#            global.* としてしか提供されないため、jp.anthropic.* が追随するまでは
+#            これがないと新しいモデルを使えない。ただし処理が東京外へ
+#            ルーティングされうるので、データ所在地の要件がある環境では設定しないこと。
 #
 # start.ps1（Windows版）と対になっている。ロジックを変更したら両方に反映すること。
 
@@ -88,6 +94,7 @@ HTTPS_PROXY_CFG=$(node_get HTTPS_PROXY "")
 AWS_CA_BUNDLE_CFG=$(node_get AWS_CA_BUNDLE "")
 NODE_EXTRA_CA_CERTS_CFG=$(node_get NODE_EXTRA_CA_CERTS "")
 LOGIN_COMMAND_CFG=$(node_get LOGIN_COMMAND "")
+ALLOW_CROSS_REGION_CFG=$(node_get ALLOW_CROSS_REGION_INFERENCE "")
 PORT=$(node_get PORT "3210")
 
 [ -n "$AWS_REGION_CFG" ] && export AWS_REGION="$AWS_REGION_CFG"
@@ -98,6 +105,10 @@ if [ -n "$AWS_CA_BUNDLE_CFG" ]; then
   # Node と AWS CLI で別の証明書を使う環境向けに、明示指定があればそちらを優先する。
   export NODE_EXTRA_CA_CERTS="${NODE_EXTRA_CA_CERTS_CFG:-$AWS_CA_BUNDLE_CFG}"
 fi
+# 東京リージョンのリージョンロックを解除するオプトイン。既定では設定しない
+# （東京外へ処理がルーティングされうるため）。対話では聞かず、必要な環境だけが
+# start.local.json に直接書く。
+[ -n "$ALLOW_CROSS_REGION_CFG" ] && export ALLOW_CROSS_REGION_INFERENCE="$ALLOW_CROSS_REGION_CFG"
 export PORT
 
 # 前回の起動を端末ごと閉じるなどした場合、node がポートを掴んだまま孤立して
@@ -155,10 +166,32 @@ if [ ! -d node_modules ]; then
 fi
 
 URL="http://localhost:$PORT"
-if command -v open >/dev/null 2>&1; then
-  open "$URL" 2>/dev/null || true
-elif command -v xdg-open >/dev/null 2>&1; then
-  xdg-open "$URL" 2>/dev/null || true
+
+open_browser() {
+  if command -v open >/dev/null 2>&1; then
+    open "$URL" 2>/dev/null || true
+  elif command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$URL" 2>/dev/null || true
+  fi
+}
+
+# ブラウザは、サーバーが実際に listen を始めてから開く。以前はここで先に
+# open していたため、ブラウザがサーバーより先に繋ぎに行ってエラーページに
+# なっていた（起動ログは正常に出るので、サーバーが落ちているように見えて
+# 紛らわしい）。下の exec でこのシェルは node に置き換わるが、その前に
+# バックグラウンドへ逃がした待ち役は別プロセスなので生き残る。
+# start.ps1 側も同じ待ち方をしている。
+if command -v open >/dev/null 2>&1 || command -v xdg-open >/dev/null 2>&1; then
+  (
+    # listen 待ちのポーリングは node で行う。start.local.json の読み書きを
+    # jq ではなく node でやっているのと同じ理由で、nc / curl の有無に
+    # 依存させない（node はこのアプリの必須依存）。
+    if node -e "const net=require('net');const port=$PORT;const deadline=Date.now()+30000;(function attempt(){const s=net.connect(port,'127.0.0.1');s.on('connect',()=>{s.destroy();process.exit(0)});s.on('error',()=>{s.destroy();if(Date.now()<deadline){setTimeout(attempt,250)}else{process.exit(1)}})})();" 2>/dev/null; then
+      open_browser
+    fi
+    # タイムアウト時はブラウザを開かない。開いてもエラーページになるだけで、
+    # 原因（ポート衝突など）はコンソールに出ている。
+  ) &
 else
   echo "ブラウザで $URL を開いてください。"
 fi

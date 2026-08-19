@@ -10,6 +10,12 @@
 # 対話で聞かれない任意項目:
 #   "LOGIN_COMMAND": "aws login"   … 認証切れ時に実行するログインコマンド
 #                                     （未指定なら "aws sso login"）
+#   "ALLOW_CROSS_REGION_INFERENCE": "1"
+#          … 東京リージョンのリージョンロックを解除し、global./apac./us. の
+#            推論プロファイルも選べるようにする。最新モデルは東京では
+#            global.* としてしか提供されないため、jp.anthropic.* が追随するまでは
+#            これがないと新しいモデルを使えない。ただし処理が東京外へ
+#            ルーティングされうるので、データ所在地の要件がある環境では設定しないこと。
 
 param(
     [switch]$Reconfigure
@@ -80,6 +86,10 @@ if ($config.AWS_CA_BUNDLE) {
     # Node と AWS CLI で別の証明書を使う環境向けに、明示指定があればそちらを優先する。
     $env:NODE_EXTRA_CA_CERTS = if ($config.NODE_EXTRA_CA_CERTS) { $config.NODE_EXTRA_CA_CERTS } else { $config.AWS_CA_BUNDLE }
 }
+# 東京リージョンのリージョンロックを解除するオプトイン。既定では設定しない
+# （東京外へ処理がルーティングされうるため）。対話では聞かず、必要な環境だけが
+# start.local.json に直接書く。
+if ($config.ALLOW_CROSS_REGION_INFERENCE) { $env:ALLOW_CROSS_REGION_INFERENCE = $config.ALLOW_CROSS_REGION_INFERENCE }
 $env:PORT = if ($config.PORT) { $config.PORT } else { "3210" }
 
 # 前回の起動時にPowerShellウィンドウを「×」で閉じるなどした場合、node.exe が
@@ -136,5 +146,42 @@ if (-not (Test-Path "node_modules")) {
     }
 }
 
-Start-Process "http://localhost:$($env:PORT)"
+# ブラウザは、サーバーが実際に listen を始めてから開く。以前はここで先に
+# Start-Process していたため、Edge がサーバーより先に繋ぎに行って「ページを
+# 表示できません」になっていた（起動ログは正常に出るので、サーバーが落ちて
+# いるように見えて紛らわしい）。
+#
+# node server.js は前景に置いたまま、待ち役だけをジョブに逃がしている。node を
+# バックグラウンドに回すとコンソールとの親子関係が変わり、上のポート掃除で
+# 対処している「ウィンドウを×で閉じると node.exe が孤立して残る」挙動に
+# 影響しうるため。start.sh 側も同じ待ち方をしている。
+$url = "http://localhost:$($env:PORT)"
+$waitThenOpen = {
+    param($Port, $Url)
+    $deadline = (Get-Date).AddSeconds(30)
+    while ((Get-Date) -lt $deadline) {
+        Start-Sleep -Milliseconds 250
+        $client = New-Object System.Net.Sockets.TcpClient
+        try {
+            $client.Connect("127.0.0.1", [int]$Port)  # 接続できた = listen 開始
+            Start-Process $Url
+            return
+        } catch {
+            # まだ起動途中。次の周回で再試行する
+        } finally {
+            $client.Dispose()
+        }
+    }
+    # タイムアウト時はブラウザを開かない。開いてもエラーページになるだけで、
+    # 原因（ポート衝突など）はコンソールに出ている。
+}
+$browserJob = $null
+try {
+    $browserJob = Start-Job -ScriptBlock $waitThenOpen -ArgumentList $env:PORT, $url
+} catch {
+    Write-Host "ブラウザの自動起動に失敗しました。$url を手動で開いてください。" -ForegroundColor Yellow
+}
+
 node server.js
+
+if ($browserJob) { Remove-Job -Job $browserJob -Force -ErrorAction SilentlyContinue }

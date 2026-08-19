@@ -1991,10 +1991,23 @@ for (const [id, key] of [["system","chat.system"],["temp","chat.temp"],["maxtok"
   try {
     const cfg = await (await fetch("/api/config")).json();
     regionLocked = !!cfg.regionLocked;
+    if (cfg.version) {
+      $("brandVer").textContent = `ver.${cfg.version}`;
+      $("brandVer").title = `Claude Desk ${cfg.version}`;
+    }
     codeUsesBedrock = !!cfg.codeUsesBedrock;
     codeBedrockSource = cfg.codeBedrockSource ?? null;
     codeBedrockDetail = cfg.codeBedrockDetail ?? null;
-    $("foot").textContent = `${cfg.region}${regionLocked ? " · 東京限定" : ""}${cfg.proxy ? " · proxy" : ""}${cfg.caBundle ? " · ca" : ""}`;
+    // 東京なのにロックが外れている（ALLOW_CROSS_REGION_INFERENCE=1）ときは、
+    // 単に「東京限定」が消えるだけにせず、東京外へ出うることを明示する。
+    // 黙ってバッジが消える状態だと、解除されていることに気づけない。
+    const regionNote = regionLocked ? " · 東京限定" : cfg.crossRegionAllowed ? " · 東京外へルーティング可" : "";
+    $("foot").textContent = `${cfg.region}${regionNote}${cfg.proxy ? " · proxy" : ""}${cfg.caBundle ? " · ca" : ""}`;
+    $("foot").title = regionLocked
+      ? "処理が東京リージョン外へルーティングされる推論プロファイル（global./apac./us.）は拒否されます。"
+      : cfg.crossRegionAllowed
+        ? "ALLOW_CROSS_REGION_INFERENCE=1 が設定されているため、global./apac./us. の推論プロファイルも選択できます。処理は東京以外のリージョンへルーティングされる可能性があります。"
+        : "";
   } catch { $("foot").textContent = "server offline"; }
   // 東京リージョン運用時は、クロスリージョン推論プロファイル(global./apac./us.)が
   // サーバー側で拒否される。手入力にフォールバックする場合もそれを明示する。

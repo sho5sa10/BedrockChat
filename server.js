@@ -23,6 +23,17 @@ import { resolveBedrockRouting } from "./code-agent/cli-config.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// 画面（サイドバーの製品名の横）に出すバージョン。package.json を唯一の正本に
+// して二重管理を避ける——ここに数字を書くと、リリース時に片方だけ上げ忘れる。
+// 読めなくても起動は妨げない（表示を省くだけ）。
+const APP_VERSION = (() => {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(__dirname, "package.json"), "utf8")).version ?? null;
+  } catch {
+    return null;
+  }
+})();
+
 const PORT = Number(process.env.PORT || 3210);
 
 // ---------------------------------------------------------------------------
@@ -82,8 +93,21 @@ try {
 // デマンド提供されるもの）のみを許可する。
 // REGION はSDKに解決させている（上のブロック参照）ため、この判定は必ず
 // REGION が確定したあとで評価する。
+//
+// ALLOW_CROSS_REGION_INFERENCE=1 でこのロックを解除できる。既定は解除しない:
+// このアプリは同僚にも配る前提で、データ所在地の要件がある人の保護を黙って
+// 外すことになるため、解除は各環境で明示的に選ぶ形にしている（環境固有の値
+// なので start.local.json に置く。CLAUDE.md の「対話では聞かない任意項目」）。
+//
+// 解除が必要になる理由: 最新モデルは東京では global.* プロファイルとしてのみ
+// 提供され、jp.anthropic.* が追随するまで時間差がある。プレフィックスなしの
+// 基礎モデル（例 anthropic.claude-opus-5）は一覧上は存在するが
+// inferenceTypesSupported が INFERENCE_PROFILE のみで ON_DEMAND を含まないため
+// 直接呼べない。つまりロックを掛けたままでは、新しいモデルは jp.* が出るまで
+// 一切使えない。解除した場合は東京以外へ処理がルーティングされうる。
 // ---------------------------------------------------------------------------
-const JAPAN_ONLY = REGION === "ap-northeast-1";
+const ALLOW_CROSS_REGION = /^(1|true)$/i.test(process.env.ALLOW_CROSS_REGION_INFERENCE || "");
+const JAPAN_ONLY = REGION === "ap-northeast-1" && !ALLOW_CROSS_REGION;
 function isJapanOnlyModel(modelId) {
   if (!modelId) return false;
   if (/^jp\.anthropic\./i.test(modelId)) return true;
@@ -460,8 +484,12 @@ app.get("/api/code/sessions/:id/events", (req, res) => {
 app.get("/api/config", (_req, res) => {
   const bedrockRouting = resolveBedrockRouting();
   res.json({
+    version: APP_VERSION,
     region: REGION,
     regionLocked: JAPAN_ONLY,
+    // 東京リージョンなのにロックが外れている状態は、黙って外れているのでは
+    // なく画面上でもそう見えるようにする（サイドバー下部の表示を切り替える）
+    crossRegionAllowed: REGION === "ap-northeast-1" && ALLOW_CROSS_REGION,
     proxy: proxyUrl ? proxyUrl.replace(/\/\/.*@/, "//***@") : null,
     caBundle: caPath || null,
     codeUsesBedrock: bedrockRouting.enabled,
@@ -752,7 +780,16 @@ app.post("/api/title", async (req, res) => {
 
 app.listen(PORT, "127.0.0.1", () => {
   console.log(`\n  Claude Desk — Chat & Code on Amazon Bedrock  →  http://localhost:${PORT}`);
-  console.log(`  region : ${REGION}`);
+  console.log(`  region : ${REGION}${JAPAN_ONLY ? " (東京限定: 東京外へルーティングされるプロファイルは拒否)" : ""}`);
+  if (JAPAN_ONLY) {
+    // 最新モデルは東京では global.* としてしか提供されないため、ロック下では
+    // 一覧に出ない。黙って出ないと「対応していない」と誤解されるので、理由と
+    // 外し方（と、外すことの意味）を起動時に一度だけ示す。
+    console.log(`  models : 最新モデルが一覧に無い場合、東京では global.* としてのみ提供されているためです`);
+    console.log(`           start.local.json に "ALLOW_CROSS_REGION_INFERENCE": "1" を追加すると選択可（要件確認のうえで）`);
+  } else if (REGION === "ap-northeast-1" && ALLOW_CROSS_REGION) {
+    console.log(`  models : ALLOW_CROSS_REGION_INFERENCE=1 — global./apac./us. も許可（東京外へルーティングされる可能性があります）`);
+  }
   console.log(`  proxy  : ${proxyUrl || "(none)"}`);
   console.log(`  ca     : ${caPath || "(system default)"}\n`);
 });
