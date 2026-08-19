@@ -207,11 +207,15 @@ const ROUTE_NOTE_HOME = "💬 <b>ホーム</b>: Amazon Bedrock を直接呼び�
 const ROUTE_NOTE_CODE = "🛠 <b>Code</b>: ローカルの <code>claude</code> CLI 経由です（課金: Claude Code 側。ホームの Bedrock 直課金とは別に発生します）";
 let sidebarTab = store.get("chat.sidebarTab", "home");
 // Whether the local `claude` CLI the Code path spawns is actually routed
-// through Bedrock — set from /api/config once init() has fetched it (see
-// server.js: it's just process.env.CLAUDE_CODE_USE_BEDROCK, this app never
-// sets it). Defaults to true (no warning) until that fetch resolves, so a
-// slow config load doesn't itself trigger a false warning.
+// through Bedrock — set from /api/config once init() has fetched it. The
+// server resolves this from the CLI's own settings files as well as the
+// environment variable (see code-agent/cli-config.js), so configuring it the
+// documented way — the CLI's settings.json — no longer trips the warning.
+// Defaults to true (no warning) until that fetch resolves, so a slow config
+// load doesn't itself trigger a false warning.
 let codeUsesBedrock = true;
+let codeBedrockSource = null; // "settings" = explicitly turned off there, null = nothing found either way
+let codeBedrockDetail = null; // where that came from, so the warning can point at the actual file
 let codeBedrockWarningShown = false;
 function setSidebarTab(tab){
   sidebarTab = tab;
@@ -225,7 +229,20 @@ function setSidebarTab(tab){
 
   if (tab === "code" && !codeUsesBedrock && !codeBedrockWarningShown) {
     codeBedrockWarningShown = true;
-    showSetupBanner("この環境の claude CLI は Bedrock 経由に設定されていません（CLAUDE_CODE_USE_BEDROCK 未設定）。Codeタブでの操作は Anthropic に直接通信している可能性があります。社内ポリシーでBedrock経由のみ許可されている場合は、claude CLI 側の設定を確認してください。");
+    // Two genuinely different situations, so two different messages. When
+    // nothing was found anywhere it says "確認できませんでした" rather than
+    // "設定されていません" — a wrapper script or the CLI's registry-based
+    // policy source could still route through Bedrock invisibly (see
+    // code-agent/cli-config.js), and overstating an unknown as a definite
+    // misconfiguration trains people to dismiss the warning.
+    const head = codeBedrockSource === "settings"
+      ? "claude CLI の設定で Bedrock 経由が明示的に無効化されています。"
+      : "claude CLI が Bedrock 経由かどうか確認できませんでした（環境変数 CLAUDE_CODE_USE_BEDROCK も、CLI の settings.json も設定されていません）。";
+    showSetupBanner(
+      head
+      + "Codeタブでの操作は Anthropic に直接通信している可能性があります。社内ポリシーでBedrock経由のみ許可されている場合は、claude CLI 側の設定を確認してください。"
+      + (codeBedrockDetail ? `（${codeBedrockDetail}）` : "")
+    );
   }
 
   // The main panel follows the tab too — otherwise switching tabs only
@@ -1975,6 +1992,8 @@ for (const [id, key] of [["system","chat.system"],["temp","chat.temp"],["maxtok"
     const cfg = await (await fetch("/api/config")).json();
     regionLocked = !!cfg.regionLocked;
     codeUsesBedrock = !!cfg.codeUsesBedrock;
+    codeBedrockSource = cfg.codeBedrockSource ?? null;
+    codeBedrockDetail = cfg.codeBedrockDetail ?? null;
     $("foot").textContent = `${cfg.region}${regionLocked ? " · 東京限定" : ""}${cfg.proxy ? " · proxy" : ""}${cfg.caBundle ? " · ca" : ""}`;
   } catch { $("foot").textContent = "server offline"; }
   // 東京リージョン運用時は、クロスリージョン推論プロファイル(global./apac./us.)が

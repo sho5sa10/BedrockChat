@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.6.2 — 2026-08-19
+
+v1.6.0 で入れた「Code経路がBedrock経由か」の警告が、**正しく設定してある環境で誤って出ていた**問題の修正。
+
+### 修正
+- Bedrock経由かどうかの判定が `process.env.CLAUDE_CODE_USE_BEDROCK` しか見ていなかった。しかし `claude` CLI の推奨される設定方法は `settings.json` の `env` ブロックで、`start.ps1` / `start.sh` はそれをサーバープロセスの環境変数には読み込まない。結果として、**settings.json で正しくBedrock経由に設定している環境に対して「Anthropicに直接通信している可能性があります」と警告していた**（素のPowerShellから起動すると必ず出る。Claude Codeが開いたターミナルから起動すると出ない、という再現性のなさもこれが原因）。狼少年になる警告は無視されるようになるため、CLI自身が読むのと同じ設定ファイルを読むようにした
+- 判定を `code-agent/cli-config.js` の `resolveBedrockRouting()` に切り出し、CLIの解決順に合わせて探索する: 企業ポリシー `managed-settings.json` → Repository の `.claude/settings.local.json` → `.claude/settings.json` → ユーザーの `~/.claude/settings.json`（`CLAUDE_CONFIG_DIR` 対応）→ 環境変数。設定ファイルを環境変数より先に見るのは、CLIが設定の `env` を継承した環境変数の上に適用するため。上位で明示的に無効化されていれば下位で再有効化しない。設定ファイル名・`CLAUDE_CONFIG_DIR`・managed-settings の3プラットフォームのパスは、いずれもインストール済みCLIバイナリ内の文字列を確認して決めた（記憶や推測ではない）
+- 警告の文言を「Bedrock経由に設定されていません」から「Bedrock経由かどうか確認できませんでした」に変更。ラッパースクリプトやWindowsのレジストリ経由のポリシーなど、ここから見えない設定手段が残るため、断定は誤り。設定ファイルで明示的に無効化されている場合だけは断定した文言を出す。読み取り専用のローカルファイル参照のみで、通信先は増えていない。ハードブロックしない方針も変えていない
+- `package-lock.json` の `version` が 1.5.0 のまま取り残されていたのを同期（v1.6.0 / v1.6.1 での bump 漏れ）
+
+### 追加
+- `test/cli-config.test.js` — 12件。誤検知の再発防止（環境変数なし + settings.json ありで確認できること）、探索順、明示的な無効化、BOM付きJSON、壊れたJSONでクラッシュしないこと等。企業ポリシーのパスはテスト用に差し替え可能にしてあり、実際にポリシーが導入されたPCでもテスト結果が変わらない
+
 ## v1.6.1 — 2026-08-19
 
 内部構造のみの変更。機能追加・修正はなし。

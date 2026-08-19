@@ -19,6 +19,7 @@ import {
 } from "@aws-sdk/client-bedrock";
 import { CodeAgent } from "./code-agent/index.js";
 import { CodeSessionManager } from "./code-agent/sessions.js";
+import { resolveBedrockRouting } from "./code-agent/cli-config.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -448,21 +449,24 @@ app.get("/api/code/sessions/:id/events", (req, res) => {
 // and inherits this process's environment verbatim — this app never sets
 // CLAUDE_CODE_USE_BEDROCK or anything else that would force Bedrock routing.
 // Whether that CLI actually calls Bedrock or Anthropic's API directly is
-// entirely up to how it was configured outside this app, so the best this
-// app can do is check the one signal it can see and let the human decide.
-// Not a hard block: a corporate rollout could plausibly configure Bedrock
-// routing via the CLI's own settings.json instead of this env var, and this
-// app has no way to see that — false-blocking on that case would be worse
-// than a warning that's occasionally unnecessary.
-const codeUsesBedrock = /^(1|true)$/i.test(process.env.CLAUDE_CODE_USE_BEDROCK || "");
-
+// entirely up to how it was configured outside this app, so the best this app
+// can do is report what it can see and let the human decide.
+//
+// Resolved per request rather than once at boot: the CLI's settings files can
+// be edited while this server is running, and re-reading three small local
+// JSON files costs nothing next to how often /api/config is called.
+// Deliberately still not a hard block — see resolveBedrockRouting for the
+// configuration sources that remain invisible from here.
 app.get("/api/config", (_req, res) => {
+  const bedrockRouting = resolveBedrockRouting();
   res.json({
     region: REGION,
     regionLocked: JAPAN_ONLY,
     proxy: proxyUrl ? proxyUrl.replace(/\/\/.*@/, "//***@") : null,
     caBundle: caPath || null,
-    codeUsesBedrock,
+    codeUsesBedrock: bedrockRouting.enabled,
+    codeBedrockSource: bedrockRouting.source,
+    codeBedrockDetail: bedrockRouting.detail,
   });
 });
 
