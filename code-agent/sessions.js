@@ -161,6 +161,7 @@ export class CodeSessionManager {
     const record = {
       sessionId: makeSessionId(),
       claudeSessionId: null,
+      model: null, // reported by the CLI's own "started" event on the first turn — see #handleEvent
       repoPath,
       mode: input.mode || DEFAULT_MODE,
       status: "starting",
@@ -408,6 +409,10 @@ export class CodeSessionManager {
     if (evt.type === "started") {
       // First turn only: later turns already know claudeSessionId and just resume it.
       record.claudeSessionId = record.claudeSessionId || evt.sessionId || null;
+      // Which model the CLI actually used — depends on its own config/login,
+      // not anything this app chooses, so we only ever surface what it
+      // reports rather than letting the user pick one for the Code path.
+      record.model = record.model || evt.model || null;
       this.#setStatus(record, "running", false);
     } else if (evt.type === "completed") {
       record.busy = false;

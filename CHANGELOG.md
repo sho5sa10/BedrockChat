@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.6.0 — 2026-08-19
+
+macOS/Linux対応と、Code経路の実際の通信先が見えていなかった点の是正が中心。
+
+### 追加
+- macOS/Linux向けの起動スクリプト `start.sh` を追加。`start.ps1` と同じ対話式セットアップ（リージョン・プロファイル・プロキシ・CA証明書・ポート）を持ち、`start.local.json` を共有する
+- **Code経路のBedrockルーティング警告**: このアプリは `claude` CLIをサブプロセスとして起動するだけで、CLI自体がBedrock経由かAnthropicへの直接通信かは制御できない。`CLAUDE_CODE_USE_BEDROCK` 環境変数が未設定のまま Codeタブに切り替えると、画面上部に警告バナーを表示するようにした（社内ポリシーでBedrock経由のみ許可されている環境向け）
+- Claude Code CLIが実際に使用したモデルを、ターン実行後にヘッダーバッジ（`🛠 Claude Code ・ <Repository> ・ <Mode> ・ <モデル>`）に表示するようにした（CLIの `started` イベントから取得。今までは捨てられていた）
+- GitHubリポジトリに Description と Topics（`claude` `anthropic` `aws-bedrock` `claude-code` `local-first` `windows` `enterprise` `chat-application`）を設定
+- `docs/` の手描きモックアップ3枚を、実画面のスクリーンショットに差し替え（個人が特定される情報は加工済み）
+
 ## v1.5.0 — 2026-08-19
 
 プロダクト名を **Claude Desk** に変更。あわせて、実態と食い違っていたドキュメントの整理と、git操作まわりの安全性の再点検を行った。機能の追加・削除はない。

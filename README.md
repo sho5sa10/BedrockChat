@@ -13,7 +13,7 @@
 ## これは何か
 
 **claude.ai や Claude Desktop が使えない環境のための、ローカルで動く Claude デスクトップ環境**です。
-Windows PC 上で Node.js のサーバーを立ち上げ、ブラウザから 2 種類の Claude を使えます。
+手元のPC（Windows / macOS / Linux）上で Node.js のサーバーを立ち上げ、ブラウザから 2 種類の Claude を使えます。
 
 - **Claude とのチャット** … Amazon Bedrock を直接呼び出します
 - **Claude Code との連携** … 手元にインストール済みの `claude` CLI を呼び出して、Repository を調査・実装させます
@@ -72,9 +72,9 @@ Code経路の詳細（Claude Code CLI が返す生の実行イベントは、Cod
 
 ## 画面イメージ
 
-![チャット画面](docs/mockup.svg)
-![設定パネル](docs/mockup-settings.svg)
-![ファイル添付](docs/mockup-attach.svg)
+![チャット画面](docs/screenshot-chat.png)
+![設定パネル](docs/screenshot-settings.png)
+![ファイル添付](docs/screenshot-attach.png)
 
 ## 課金の違い
 
@@ -149,31 +149,35 @@ MIT License（`LICENSE` を参照）。社内利用・改変・再配布は自�
 cd 展開したフォルダ
 ```
 
+Windows（PowerShell）:
+
 ```powershell
 .\start.ps1
 ```
 
-初回だけリージョンやプロキシなどをいくつか聞かれます（わからなければ空欄でEnterでOK）。回答は `start.local.json`（Git管理外）に保存され、次回以降は自動で読み込まれます。設定をやり直したいときは `.\start.ps1 -Reconfigure` を実行してください。
+macOS / Linux:
+
+```bash
+./start.sh
+```
+
+初回だけリージョンやプロキシなどをいくつか聞かれます（わからなければ空欄でEnterでOK）。回答は `start.local.json`（Git管理外）に保存され、次回以降は自動で読み込まれます。設定をやり直したいときは `.\start.ps1 -Reconfigure`（macOS/Linuxは `./start.sh --reconfigure`）を実行してください。
 
 ### 方法B: ソースから（git clone）
 
-```powershell
+```bash
 git clone https://github.com/sho5sa10/Claude-Desk.git
 cd Claude-Desk
 npm install
 ```
 
-以降は方法Aと同じく実行するだけです。
-
-```powershell
-.\start.ps1
-```
+以降は方法Aと同じく実行するだけです（`.\start.ps1` または `./start.sh`）。
 
 ---
 
 ブラウザで <http://localhost:3210>（`PORT`を変更した場合はそのポート）が開きます。AWS未設定などで起動時にエラーがある場合は、画面上部に原因と対処法が表示されます。
 
-`start.ps1` を使わず、環境変数だけで起動しても構いません。
+`start.ps1` / `start.sh` を使わず、環境変数だけで起動しても構いません。
 
 | 変数 | 用途 |
 |---|---|
@@ -190,7 +194,9 @@ npm install
 
 Bedrock でオンデマンド提供されている Anthropic のモデル（Claude Sonnet / Opus / Haiku 系の推論プロファイル）に対応しています。画面のモデル欄はアカウントから自動取得され、権限がない場合はIDを直接入力できます。Anthropic以外のモデル（Amazon Nova等）は現状スコープ外です。
 
-Code経路で使われるモデルは Claude Code CLI 側の設定に従うため、画面のモデル欄は影響しません。
+Code経路で使われるモデルは Claude Code CLI 側の設定に従うため、画面のモデル欄は影響しません。CLIが実際に使ったモデルは、ターン実行後にヘッダーのバッジ（`🛠 Claude Code ・ <Repository> ・ <Mode> ・ <モデル>`）に反映されます。
+
+**Code経路がBedrockを経由する保証はない点に注意してください。** このアプリは `claude` CLIをサブプロセスとして起動するだけで、CLI自体の通信先（Bedrock経由か、Anthropicへの直接通信か）はCLI側の設定（`CLAUDE_CODE_USE_BEDROCK`環境変数など）に完全に依存します。環境変数 `CLAUDE_CODE_USE_BEDROCK` が設定されていない場合、Codeタブに切り替えた時点で画面上部に警告バナーを表示します。社内ポリシーでBedrock経由のみが許可されている場合は、この変数が設定されていることを確認してください。
 
 **リージョンロック（東京リージョン利用時）**
 
@@ -349,7 +355,7 @@ npm config set cafile C:\certs\zscaler-root.pem
 別のターミナルで手動でブランチを切り替えた状態です。無関係な変更を commit したり消したりしないよう、意図的に拒否しています。元の `ai/<セッションID>` ブランチに戻してから操作してください。
 
 **しばらく起動したままにしていたら、チャットが無反応になった**
-SDKが起動時にキャッシュした認証情報が古くなっている可能性があります。`start.ps1` を再実行してサーバー自体を再起動してください。
+SDKが起動時にキャッシュした認証情報が古くなっている可能性があります。`start.ps1`（macOS/Linuxは`start.sh`）を再実行してサーバー自体を再起動してください。
 
 ## 同僚に配るとき
 
@@ -363,7 +369,6 @@ SDKが起動時にキャッシュした認証情報が古くなっている可�
 - 会話のエクスポート形式の追加（現在は Markdown のみ）
 - 会話の分岐（同じ地点から複数の応答を保持して切り替え表示）
 - Artifactsプレビューの拡張（現在は HTML / SVG / XML のみ。React実行・コード実行は未対応）
-- 実画面のスクリーンショットへの差し替え（現在は手描きのモックアップ）
 
 ## このプロジェクトについて
 

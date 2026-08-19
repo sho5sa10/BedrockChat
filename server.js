@@ -313,6 +313,7 @@ function sessionSummary(record) {
     status: record.status,
     repoPath: record.repoPath,
     mode: record.mode,
+    model: record.model,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
     eventCount: record.events.length,
@@ -443,12 +444,25 @@ app.get("/api/code/sessions/:id/events", (req, res) => {
   req.on("close", () => codeSessions.unsubscribe(record.sessionId, onEvent));
 });
 
+// The Code path spawns the user's own `claude` CLI (see code-agent/claude-code.js)
+// and inherits this process's environment verbatim — this app never sets
+// CLAUDE_CODE_USE_BEDROCK or anything else that would force Bedrock routing.
+// Whether that CLI actually calls Bedrock or Anthropic's API directly is
+// entirely up to how it was configured outside this app, so the best this
+// app can do is check the one signal it can see and let the human decide.
+// Not a hard block: a corporate rollout could plausibly configure Bedrock
+// routing via the CLI's own settings.json instead of this env var, and this
+// app has no way to see that — false-blocking on that case would be worse
+// than a warning that's occasionally unnecessary.
+const codeUsesBedrock = /^(1|true)$/i.test(process.env.CLAUDE_CODE_USE_BEDROCK || "");
+
 app.get("/api/config", (_req, res) => {
   res.json({
     region: REGION,
     regionLocked: JAPAN_ONLY,
     proxy: proxyUrl ? proxyUrl.replace(/\/\/.*@/, "//***@") : null,
     caBundle: caPath || null,
+    codeUsesBedrock,
   });
 });
 

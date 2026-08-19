@@ -793,6 +793,13 @@ let selectedIds = new Set();
 const ROUTE_NOTE_HOME = "💬 <b>ホーム</b>: Amazon Bedrock を直接呼び出します（課金: AWS の Bedrock 利用料）";
 const ROUTE_NOTE_CODE = "🛠 <b>Code</b>: ローカルの <code>claude</code> CLI 経由です（課金: Claude Code 側。ホームの Bedrock 直課金とは別に発生します）";
 let sidebarTab = store.get("chat.sidebarTab", "home");
+// Whether the local `claude` CLI the Code path spawns is actually routed
+// through Bedrock — set from /api/config once init() has fetched it (see
+// server.js: it's just process.env.CLAUDE_CODE_USE_BEDROCK, this app never
+// sets it). Defaults to true (no warning) until that fetch resolves, so a
+// slow config load doesn't itself trigger a false warning.
+let codeUsesBedrock = true;
+let codeBedrockWarningShown = false;
 function setSidebarTab(tab){
   sidebarTab = tab;
   store.set("chat.sidebarTab", tab);
@@ -802,6 +809,11 @@ function setSidebarTab(tab){
   $("tabCode").classList.toggle("active", tab === "code");
   $("newchat").hidden = tab !== "home";
   $("newChatCode").hidden = tab !== "code";
+
+  if (tab === "code" && !codeUsesBedrock && !codeBedrockWarningShown) {
+    codeBedrockWarningShown = true;
+    showSetupBanner("この環境の claude CLI は Bedrock 経由に設定されていません（CLAUDE_CODE_USE_BEDROCK 未設定）。Codeタブでの操作は Anthropic に直接通信している可能性があります。社内ポリシーでBedrock経由のみ許可されている場合は、claude CLI 側の設定を確認してください。");
+  }
 
   // The main panel follows the tab too — otherwise switching tabs only
   // updates the sidebar list while the chat pane keeps showing whatever was
@@ -984,6 +996,15 @@ $("threadMenu").addEventListener("click", (e) => {
   if (!threads.length) newThread(); else render();
 });
 
+// Leading marker so a Code thread is identifiable from the header alone,
+// without having to notice which sidebar tab happens to be selected.
+// t.model comes from the CLI's own "started" event (see the SSE handler in
+// ensureCcConnection) — not something this app lets the user pick — so it's
+// only appended once a turn has actually run and reported it.
+function ccInfoText(t){
+  const mode = t.mode === "acceptEdits" ? "Accept edits" : "Plan only";
+  return `🛠 Claude Code ・ ${t.repoLabel ?? t.repoPath} ・ ${mode}${t.model ? " ・ " + t.model : ""}`;
+}
 function render(){
   renderThreadList();
   const t = threads.find(x => x.id === currentId);
@@ -994,9 +1015,7 @@ function render(){
   const ccInfo = $("ccInfo");
   if (t?.kind === "claude-code") {
     ccInfo.hidden = false;
-    // Leading marker so a Code thread is identifiable from the header alone,
-    // without having to notice which sidebar tab happens to be selected.
-    ccInfo.textContent = `🛠 Claude Code ・ ${t.repoLabel ?? t.repoPath} ・ ${t.mode === "acceptEdits" ? "Accept edits" : "Plan only"}`;
+    ccInfo.textContent = ccInfoText(t);
     ccInfo.title = "この会話はローカルの claude CLI 経由です。課金は Claude Code 側で、ホームの Bedrock 直課金とは別に発生します。";
   } else {
     ccInfo.hidden = true;
@@ -1819,7 +1838,19 @@ function ensureCcConnection(threadId, sessionId, skipCount){
       if (!cur) return; // no turn currently in flight for this connection
       let evt;
       try { evt = JSON.parse(e.data); } catch { return; }
-      if (evt.type === "tool") {
+      if (evt.type === "started") {
+        // Only the CLI knows which model it actually used (its own config/
+        // login decides this, not this app) — capture it the first time and
+        // reflect it in the header badge for whichever thread this is.
+        if (evt.model) {
+          const t = threads.find(x => x.id === threadId);
+          if (t && t.model !== evt.model) {
+            t.model = evt.model;
+            persist();
+            if (currentId === threadId) { $("ccInfo").textContent = ccInfoText(t); }
+          }
+        }
+      } else if (evt.type === "tool") {
         cur.tools.push({ tool: evt.tool, target: evt.target });
         setContent(cur.el, cur.answer, cur.thought, true, cur.tools);
       } else if (evt.type === "text") {
@@ -2530,6 +2561,7 @@ for (const [id, key] of [["system","chat.system"],["temp","chat.temp"],["maxtok"
   try {
     const cfg = await (await fetch("/api/config")).json();
     regionLocked = !!cfg.regionLocked;
+    codeUsesBedrock = !!cfg.codeUsesBedrock;
     $("foot").textContent = `${cfg.region}${regionLocked ? " · 東京限定" : ""}${cfg.proxy ? " · proxy" : ""}${cfg.caBundle ? " · ca" : ""}`;
   } catch { $("foot").textContent = "server offline"; }
   // 東京リージョン運用時は、クロスリージョン推論プロファイル(global./apac./us.)が
