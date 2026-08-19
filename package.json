@@ -1,6 +1,6 @@
 {
   "name": "claude-desk",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "private": true,
   "type": "module",
   "description": "Claude Desk — local Claude chat & Claude Code companion on Amazon Bedrock",

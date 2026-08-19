@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.6.1 — 2026-08-19
+
+内部構造のみの変更。機能追加・修正はなし。
+
+### 変更
+- `public/index.html`（2600行超）から `<style>` を `public/styles.css` に、`<script>` を `public/app.js` に分離。ビルドツールは追加せず、`<link>`/`<script src>` で読み込むだけ（`express.static` が `public/` をそのまま配信する構成は変更なし）。テーマのFOUC防止用の小さな即時実行スクリプトのみ、初回描画前に間に合わせる必要があるためHTML側に残している
+
 ## v1.6.0 — 2026-08-19
 
 macOS/Linux対応と、Code経路の実際の通信先が見えていなかった点の是正が中心。

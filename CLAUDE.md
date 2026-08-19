@@ -41,7 +41,7 @@ npm test          # node --test（code-agent/ のユニット・ワークフロ�
 ### ファイル構成
 
 - `server.js` — Express サーバー。Bedrock Runtime/Control プレーンへのアクセス、ファイル読み込み、SSEストリーミング、Claude Code連携エンドポイントのルーティングを担う。
-- `public/index.html` — フロントエンド全体（HTML+CSS+JS）が1ファイルに収まっている。ビルドツールを使わないので、これがそのままブラウザに配信される。
+- `public/index.html` / `public/styles.css` / `public/app.js` — フロントエンド。v1.6.0までは1ファイルだったが、2600行超えで見通しが悪くなったため`<style>`と`<script>`をそれぞれ切り出した（`<link rel="stylesheet">`・`<script src>`で読み込むだけで、ビルドツールは今も使わない。`express.static`が`public/`をそのまま配信する）。`<head>`直下の小さな即時実行`<script>`（テーマのFOUC防止）だけはHTML側に残している——外部ファイル化すると初回描画前に間に合わない可能性があるため。3ファイルとも同じ理由（機能追加のたびにこのファイルが肥大化する）で今後さらに分割される可能性がある。
 - `code-agent/` — Claude Code（CLI）連携。`index.js`(一回きりの実装依頼) / `sessions.js`(継続する会話＋Plan→承認→編集→テスト→Diff→承認→Commitのワークフロー) / `claude-code.js`(CLIの起動とJSONLの正規化) / `git-adapter.js`・`git-info.js`・`test-runner.js`・`shell-utils.js`。Claude Desk本体はCLIのJSONL出力を直接見ず、正規化済みイベントだけを受け取る。
 - `test/`・`fixtures/` — `node --test` 用のテストと、Claude Code CLIを模した実行可能スタブ。
 
