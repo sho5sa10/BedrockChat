@@ -77,12 +77,20 @@ function settingsFiles(repoPath, managedDir) {
 /**
  * Returns {enabled, source, detail}:
  *   enabled — true only when Bedrock routing is positively confirmed
- *   source  — "settings" | "env" | null (null = could not confirm either way)
+ *   source  — "settings" | "enforced" | "env" | null (null = cannot confirm)
  *   detail  — where the answer came from, so the UI can explain its reasoning
  *
- * Settings files are checked before the inherited environment variable
- * because the CLI applies its settings' `env` block over what it inherits —
- * an explicit "0" in settings would win over an inherited "1".
+ * Settings files are checked before anything else because the CLI applies
+ * its settings' `env` block over what it inherits — an explicit "0" there
+ * wins over any value we pass down, including the one this app now forces.
+ *
+ * Since v1.6.4 the app itself sets CLAUDE_CODE_USE_BEDROCK on the spawned
+ * process (see buildChildEnv in claude-code.js), so with no settings file
+ * saying otherwise the answer is "enforced" rather than "unknown" — which is
+ * what makes the app's "only talks to Bedrock" promise something it upholds
+ * instead of something it hopes for. ALLOW_ANTHROPIC_DIRECT=1 disables that
+ * enforcement, and this must mirror it, or the UI would claim Bedrock
+ * routing for a run that was deliberately allowed to reach Anthropic.
  *
  * `enabled: false` with `source: null` means "could not confirm", which is
  * NOT the same as "definitely calling Anthropic directly": a wrapper script,
@@ -92,9 +100,10 @@ function settingsFiles(repoPath, managedDir) {
  *
  * `managedSettingsDir` is a test seam only: the real path is machine-wide, so
  * without it a test box that happens to have an enterprise policy installed
- * would change the outcome of the unit tests.
+ * would change the outcome of the unit tests. `env` is likewise a seam, so a
+ * test can exercise the opt-out without mutating the real process env.
  */
-export function resolveBedrockRouting(repoPath, { managedSettingsDir: managedDir } = {}) {
+export function resolveBedrockRouting(repoPath, { managedSettingsDir: managedDir, env = process.env } = {}) {
   const unreadable = [];
 
   for (const file of settingsFiles(repoPath, managedDir)) {
@@ -113,7 +122,20 @@ export function resolveBedrockRouting(repoPath, { managedSettingsDir: managedDir
       : { enabled: false, source: "settings", detail: `${file}（明示的に無効化されています）` };
   }
 
-  if (isEnabled(process.env[BEDROCK_ENV_KEY])) {
+  if (!isEnabled(env.ALLOW_ANTHROPIC_DIRECT)) {
+    // Still surface an unreadable settings file: enforcement makes the
+    // routing answer "yes", but a file the CLI may parse differently than we
+    // could is worth showing rather than swallowing.
+    return {
+      enabled: true,
+      source: "enforced",
+      detail: unreadable.length
+        ? `Claude Desk が起動時に強制しています（ただしJSONとして読めない設定ファイルがあります: ${unreadable.join(", ")}）`
+        : "Claude Desk が起動時に強制しています",
+    };
+  }
+
+  if (isEnabled(env[BEDROCK_ENV_KEY])) {
     return { enabled: true, source: "env", detail: `環境変数 ${BEDROCK_ENV_KEY}` };
   }
 

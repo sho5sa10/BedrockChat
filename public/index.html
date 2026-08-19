@@ -23,7 +23,7 @@
       <span class="icon-sq"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5"/></svg></span>
       ホーム
     </button>
-    <button id="tabCode" class="sidebar-tab" title="Code: ローカルの claude CLI 経由でRepositoryを調査・実装（課金は Claude Code 側。ホームのBedrock直課金とは別）">
+    <button id="tabCode" class="sidebar-tab" title="Code: ローカルの claude CLI 経由でRepositoryを調査・実装（CLIもBedrock経由で動くため、課金は同じAWSアカウント）">
       <span class="icon-sq"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 6 2 12 8 18"/><polyline points="16 6 22 12 16 18"/></svg></span>
       Code
     </button>
@@ -33,7 +33,7 @@
       <span class="icon-sq"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span>
       新しいチャット
     </button>
-    <button class="newchat code" id="newChatCode" title="Repository について、ローカルの claude CLI と継続的に会話します（課金: Claude Code 側。Bedrock直課金とは別）">
+    <button class="newchat code" id="newChatCode" title="Repository について、ローカルの claude CLI と継続的に会話します（CLIもBedrock経由で動くため、課金は同じAWSアカウント）">
       <span class="icon-sq"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></span>
       Claude Codeと会話する
     </button>
@@ -188,7 +188,7 @@
       <label for="codePrompt">Implementation Prompt（編集できます）</label>
       <textarea id="codePrompt" placeholder="Claude Codeへの実装指示…"></textarea>
       <div class="hint2">Claudeの回答をそのまま実行せず、内容を確認・編集してから実装開始を押してください。</div>
-      <div class="hint2">実行はローカルの <code>claude</code> CLI 経由です。課金は Claude Code 側で、ホームの Bedrock 直課金とは別に発生します。</div>
+      <div class="hint2">実行はローカルの <code>claude</code> CLI 経由です。CLI も Bedrock 経由で動くため、課金はホームと同じ AWS アカウントに乗ります。</div>
     </div>
     <div class="code-status" id="codeStatus"></div>
     <div class="modal-actions">
@@ -213,7 +213,7 @@
       </select>
     </div>
     <div class="hint2">開始すると、このRepositoryについて自然な会話でClaude Codeに質問できます。</div>
-    <div class="hint2">この会話はローカルの <code>claude</code> CLI 経由です。課金は Claude Code 側で、ホームの Bedrock 直課金とは別に発生します。</div>
+    <div class="hint2">この会話はローカルの <code>claude</code> CLI 経由です。CLI も Bedrock 経由で動くため、課金はホームと同じ AWS アカウントに乗ります。</div>
     <div class="code-status" id="ccNewStatus"></div>
     <div class="modal-actions">
       <button id="ccNewCancel">キャンセル</button>

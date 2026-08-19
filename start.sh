@@ -17,6 +17,13 @@
 #            global.* としてしか提供されないため、jp.anthropic.* が追随するまでは
 #            これがないと新しいモデルを使えない。ただし処理が東京外へ
 #            ルーティングされうるので、データ所在地の要件がある環境では設定しないこと。
+#   "ALLOW_ANTHROPIC_DIRECT": "1"
+#          … Codeタブが起動する claude CLI に対する Bedrock 経由の強制を解除する。
+#            既定では Claude Desk が CLAUDE_CODE_USE_BEDROCK と
+#            CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC を立てて起動するので、
+#            「通信先は Bedrock だけ」が保たれる。これを設定すると CLI 自身の
+#            設定に委ねられ、Anthropic へ直接通信しうる（自動アップデートや
+#            テレメトリも既定に戻る）。
 #
 # start.ps1（Windows版）と対になっている。ロジックを変更したら両方に反映すること。
 
@@ -95,6 +102,7 @@ AWS_CA_BUNDLE_CFG=$(node_get AWS_CA_BUNDLE "")
 NODE_EXTRA_CA_CERTS_CFG=$(node_get NODE_EXTRA_CA_CERTS "")
 LOGIN_COMMAND_CFG=$(node_get LOGIN_COMMAND "")
 ALLOW_CROSS_REGION_CFG=$(node_get ALLOW_CROSS_REGION_INFERENCE "")
+ALLOW_ANTHROPIC_DIRECT_CFG=$(node_get ALLOW_ANTHROPIC_DIRECT "")
 PORT=$(node_get PORT "3210")
 
 [ -n "$AWS_REGION_CFG" ] && export AWS_REGION="$AWS_REGION_CFG"
@@ -109,6 +117,9 @@ fi
 # （東京外へ処理がルーティングされうるため）。対話では聞かず、必要な環境だけが
 # start.local.json に直接書く。
 [ -n "$ALLOW_CROSS_REGION_CFG" ] && export ALLOW_CROSS_REGION_INFERENCE="$ALLOW_CROSS_REGION_CFG"
+# Codeタブの claude CLI に対する Bedrock 経由の強制を解除するオプトイン。
+# 既定では設定しない（解除すると Anthropic へ直接通信しうるため）。
+[ -n "$ALLOW_ANTHROPIC_DIRECT_CFG" ] && export ALLOW_ANTHROPIC_DIRECT="$ALLOW_ANTHROPIC_DIRECT_CFG"
 export PORT
 
 # 前回の起動を端末ごと閉じるなどした場合、node がポートを掴んだまま孤立して

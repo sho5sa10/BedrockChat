@@ -35,13 +35,13 @@ Claude Code で使っているのと同じ AWS 認証情報・プロキシ・CA�
 
 ## 2つのモード
 
-画面は「ホーム」と「Code」の2タブに分かれており、**それぞれ呼び出し先も課金先も別**です。スレッドの種類は作成時に固定され、1つのスレッド内で混在することはありません。
+画面は「ホーム」と「Code」の2タブに分かれており、**呼び出し方が違います**（どちらも最終的には Bedrock を呼びます）。スレッドの種類は作成時に固定され、1つのスレッド内で混在することはありません。
 
 | | 🏠 ホーム | 🛠 Code |
 |---|---|---|
-| 呼び出し先 | Amazon Bedrock の Converse Stream API を**直接**呼び出し | ローカルの `claude` CLI（Claude Code）を起動 |
+| 呼び出し先 | Amazon Bedrock の Converse Stream API を**直接**呼び出し | ローカルの `claude` CLI（Claude Code）を起動し、その CLI が Bedrock を呼ぶ |
 | 何が得意か | 文書レビュー・要約・設計相談・雑談 | Repository の調査・質問・実装 |
-| **課金** | **AWS の Bedrock 利用料** | **Claude Code の利用料**（CLIの起動ごとに発生） |
+| **課金** | **AWS の Bedrock 利用料** | **AWS の Bedrock 利用料**（CLI が Bedrock 経由で動くため） |
 | ファイル添付 | 対応（画像・PDF・Office・zip） | 非対応（Claude Code が直接 Repository を読みます） |
 | ファイルの変更 | しない | 承認制ワークフローを通したときのみ |
 
@@ -80,26 +80,29 @@ Code経路の詳細（Claude Code CLI が返す生の実行イベントは、Cod
 ![設定パネル](docs/screenshot-settings.png)
 ![ファイル添付](docs/screenshot-attach.png)
 
-## 課金の違い
+## 課金
 
-**この2つは請求先が違います。** 画面上でも区別できるようにしています。
+**どちらの経路も、請求先は同じ AWS アカウントです。**
+
+Claude Desk は Code タブが起動する `claude` CLI に `CLAUDE_CODE_USE_BEDROCK=1` を渡すため、CLI は Anthropic の API ではなく Bedrock を呼びます。つまり Anthropic のサブスクリプションや API クレジットは消費されず、どちらのタブもトークン量に応じた Bedrock の従量課金として AWS アカウントに乗ります。
 
 | 経路 | 課金されるもの | どこに請求されるか |
 |---|---|---|
 | ホーム（Bedrock直） | 入力/出力トークン数に応じた Bedrock の従量課金 | AWS アカウント |
-| Code（Claude Code CLI） | `claude` の起動ごとに発生する Claude Code の利用料 | Claude Code の契約（サブスクリプション / API クレジット） |
+| Code（Claude Code CLI 経由） | 同上。ただしツール実行を伴うぶんトークン消費は大きくなりがち | AWS アカウント |
 
-**画面上での見分け方**
+ただし例外が2つあります。
 
-- サイドバーのタブが「ホーム」か「Code」か
-- Code スレッドではヘッダーに青い `🛠 Claude Code ・ <Repository> ・ <Mode>` バッジが出る（ホバーで課金の注記が出ます）
-- スレッドを開いた直後の空画面と、Code チャット開始／実装依頼のモーダルに「Claude Code 側の課金です」という注記が出る
+- **CLI の設定で明示的に無効化されている場合。** `settings.json` や企業ポリシーが `CLAUDE_CODE_USE_BEDROCK` を `0` にしていると、CLI はそちらを優先します（CLI は設定ファイルの `env` を、継承した環境変数の上に適用するため）。この場合は Anthropic 側の課金になります
+- **`ALLOW_ANTHROPIC_DIRECT=1` を設定した場合。** 強制を意図的に解除したときも同様です
 
-なお、Code スレッドで表示される「概算コスト」は Claude Code CLI 自身が報告した見積もりで、Bedrock の請求額ではありません。
+どちらのケースも、Code タブを開いたときに画面上部の警告バナーで知らせます。
+
+なお、Code スレッドで表示される「概算コスト」は Claude Code CLI 自身が報告した見積もりであり、実際の Bedrock 請求額とは一致しません。
 
 ## セキュリティ
 
-- **通信先**: Amazon Bedrock と、ローカルの `claude` CLI だけ。それ以外の外部サービスへは通信しません
+- **通信先**: Amazon Bedrock だけ。ホーム経路はサーバーが直接呼び出し、Code経路が起動する `claude` CLI にも `CLAUDE_CODE_USE_BEDROCK=1` と `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`（自動アップデート・テレメトリ・エラーレポートの停止）を渡すため、CLI 側も Bedrock 以外へは通信しません。CLI 自身の設定で明示的に無効化されている場合と、`ALLOW_ANTHROPIC_DIRECT=1` で強制を解除した場合はこの限りではなく、どちらも Code タブを開いたときに警告バナーで知らせます
 - **待ち受け**: サーバーは `127.0.0.1` のみで待ち受けるため、PC外からはアクセスできません
 - **許可フォルダ**: ファイル参照・Repository 選択のどちらも、画面で登録した許可フォルダ配下に限定されます。範囲外のパスは、直接指定しても拒否されます（Code経路も同じ `insideRoots()` を再利用しており、別のアクセス制御は作っていません）
 - **会話履歴**: ブラウザの localStorage を正本とし、同じPC内の `data/history.json` にバックアップします（ブラウザのサイトデータを消しても履歴が失われないようにするためのもので、外部には送信しません）

@@ -84,6 +84,48 @@ function summarizeUsage(usage) {
 }
 
 /**
+ * The environment the spawned CLI gets, on top of this process's own.
+ *
+ * Claude Desk's stated promise is that the only things it talks to are
+ * Amazon Bedrock and a local `claude` CLI. Inheriting the environment
+ * verbatim (which is what this did until v1.6.4) left that promise resting
+ * on however the machine happened to be configured: an unconfigured CLI
+ * talks to Anthropic's API directly, and even a correctly Bedrock-routed
+ * one still does update checks, telemetry and error reporting to non-Bedrock
+ * endpoints by default. So the promise is enforced here rather than hoped
+ * for. Both variable names were confirmed present in the installed CLI
+ * binary rather than recalled.
+ *
+ * Precedence caveat, and why this is not an absolute guarantee: the CLI
+ * applies its settings.json `env` block *on top of* the environment it
+ * inherits (the same ordering cli-config.js documents). So a settings file
+ * or enterprise policy that explicitly sets CLAUDE_CODE_USE_BEDROCK=0 still
+ * wins over what we set here — which is the correct outcome, since an
+ * explicit policy should beat an app's default, and resolveBedrockRouting()
+ * reports that case definitively. What this closes is the common gap: a
+ * machine that configures nothing at all now routes through Bedrock instead
+ * of silently reaching Anthropic.
+ *
+ * ALLOW_ANTHROPIC_DIRECT=1 opts out, following the same shape as
+ * ALLOW_CROSS_REGION_INFERENCE (default protective, opt-out written
+ * explicitly into start.local.json). Opting out also stops us from forcing
+ * the traffic setting off, since someone deliberately using the CLI against
+ * Anthropic has no reason to inherit our lockdown of its other traffic.
+ */
+export function buildChildEnv(env = process.env) {
+  const allowDirect = /^(1|true)$/i.test(String(env.ALLOW_ANTHROPIC_DIRECT ?? "").trim());
+  if (allowDirect) return { ...env };
+  return {
+    ...env,
+    CLAUDE_CODE_USE_BEDROCK: "1",
+    // Umbrella switch covering the autoupdater, telemetry and error
+    // reporting in one go, so a future addition to that set is disabled
+    // too rather than needing another variable added here.
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+  };
+}
+
+/**
  * Adapter that isolates "how to launch and read Claude Code" from the rest
  * of the app. CodeAgent only ever sees the normalized events above via the
  * EventEmitter returned by execute(); it has no idea a CLI subprocess or a
@@ -176,6 +218,7 @@ export class ClaudeCodeAdapter {
     try {
       child = spawn(spawnCommand, spawnArgs, {
         cwd: request.repoPath,
+        env: buildChildEnv(), // forces Bedrock routing / no non-essential traffic — see buildChildEnv
         shell: useShell,
         windowsHide: true,
         stdio: ["pipe", "pipe", "pipe"],

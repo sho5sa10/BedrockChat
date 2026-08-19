@@ -204,7 +204,7 @@ let selectedIds = new Set();
 // from the chat itself — so every entry point into a thread says so plainly
 // rather than leaving it to the README.
 const ROUTE_NOTE_HOME = "💬 <b>ホーム</b>: Amazon Bedrock を直接呼び出します（課金: AWS の Bedrock 利用料）";
-const ROUTE_NOTE_CODE = "🛠 <b>Code</b>: ローカルの <code>claude</code> CLI 経由です（課金: Claude Code 側。ホームの Bedrock 直課金とは別に発生します）";
+const ROUTE_NOTE_CODE = "🛠 <b>Code</b>: ローカルの <code>claude</code> CLI 経由です（CLI も Bedrock 経由で動くため、課金は同じ AWS アカウント）";
 let sidebarTab = store.get("chat.sidebarTab", "home");
 // Whether the local `claude` CLI the Code path spawns is actually routed
 // through Bedrock — set from /api/config once init() has fetched it. The
@@ -214,7 +214,7 @@ let sidebarTab = store.get("chat.sidebarTab", "home");
 // Defaults to true (no warning) until that fetch resolves, so a slow config
 // load doesn't itself trigger a false warning.
 let codeUsesBedrock = true;
-let codeBedrockSource = null; // "settings" = explicitly turned off there, null = nothing found either way
+let codeBedrockSource = null; // "settings" = explicitly turned off there; null = the app's enforcement was opted out of
 let codeBedrockDetail = null; // where that came from, so the warning can point at the actual file
 let codeBedrockWarningShown = false;
 function setSidebarTab(tab){
@@ -235,12 +235,16 @@ function setSidebarTab(tab){
     // policy source could still route through Bedrock invisibly (see
     // code-agent/cli-config.js), and overstating an unknown as a definite
     // misconfiguration trains people to dismiss the warning.
+    // Since the app forces CLAUDE_CODE_USE_BEDROCK on the CLI it spawns,
+    // reaching here at all means one of only two things: a settings file
+    // explicitly overrode that (the CLI applies settings over the inherited
+    // environment), or the enforcement was deliberately opted out of.
     const head = codeBedrockSource === "settings"
-      ? "claude CLI の設定で Bedrock 経由が明示的に無効化されています。"
-      : "claude CLI が Bedrock 経由かどうか確認できませんでした（環境変数 CLAUDE_CODE_USE_BEDROCK も、CLI の settings.json も設定されていません）。";
+      ? "claude CLI の設定で Bedrock 経由が明示的に無効化されています。Claude Desk が渡す設定より、CLI 自身の設定ファイルが優先されます。"
+      : "ALLOW_ANTHROPIC_DIRECT が設定されているため、Bedrock 経由の強制を解除しています。";
     showSetupBanner(
       head
-      + "Codeタブでの操作は Anthropic に直接通信している可能性があります。社内ポリシーでBedrock経由のみ許可されている場合は、claude CLI 側の設定を確認してください。"
+      + "Codeタブでの操作は Anthropic に直接通信している可能性があります。社内ポリシーでBedrock経由のみ許可されている場合は、この設定を見直してください。"
       + (codeBedrockDetail ? `（${codeBedrockDetail}）` : "")
     );
   }
@@ -446,7 +450,7 @@ function render(){
   if (t?.kind === "claude-code") {
     ccInfo.hidden = false;
     ccInfo.textContent = ccInfoText(t);
-    ccInfo.title = "この会話はローカルの claude CLI 経由です。課金は Claude Code 側で、ホームの Bedrock 直課金とは別に発生します。";
+    ccInfo.title = "この会話はローカルの claude CLI 経由です。CLI も Bedrock 経由で動くため、課金はホームと同じ AWS アカウントに乗ります。";
   } else {
     ccInfo.hidden = true;
     ccInfo.title = "";

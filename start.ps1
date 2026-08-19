@@ -16,6 +16,13 @@
 #            global.* としてしか提供されないため、jp.anthropic.* が追随するまでは
 #            これがないと新しいモデルを使えない。ただし処理が東京外へ
 #            ルーティングされうるので、データ所在地の要件がある環境では設定しないこと。
+#   "ALLOW_ANTHROPIC_DIRECT": "1"
+#          … Codeタブが起動する claude CLI に対する Bedrock 経由の強制を解除する。
+#            既定では Claude Desk が CLAUDE_CODE_USE_BEDROCK と
+#            CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC を立てて起動するので、
+#            「通信先は Bedrock だけ」が保たれる。これを設定すると CLI 自身の
+#            設定に委ねられ、Anthropic へ直接通信しうる（自動アップデートや
+#            テレメトリも既定に戻る）。
 
 param(
     [switch]$Reconfigure
@@ -90,6 +97,9 @@ if ($config.AWS_CA_BUNDLE) {
 # （東京外へ処理がルーティングされうるため）。対話では聞かず、必要な環境だけが
 # start.local.json に直接書く。
 if ($config.ALLOW_CROSS_REGION_INFERENCE) { $env:ALLOW_CROSS_REGION_INFERENCE = $config.ALLOW_CROSS_REGION_INFERENCE }
+# Codeタブの claude CLI に対する Bedrock 経由の強制を解除するオプトイン。
+# 既定では設定しない（解除すると Anthropic へ直接通信しうるため）。
+if ($config.ALLOW_ANTHROPIC_DIRECT) { $env:ALLOW_ANTHROPIC_DIRECT = $config.ALLOW_ANTHROPIC_DIRECT }
 $env:PORT = if ($config.PORT) { $config.PORT } else { "3210" }
 
 # 前回の起動時にPowerShellウィンドウを「×」で閉じるなどした場合、node.exe が
